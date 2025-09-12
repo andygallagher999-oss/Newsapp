@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<style>
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    margin:0; padding:0; min-height:100vh;
+}
+.container { max-width: 1200px; margin:0 auto; padding:10px; }
+.header { text-align:center; color:white; margin-bottom:20px; }
+.header h1 { font-size:clamp(1.8rem,5vw,2.5rem); margin-bottom:5px; }
+.header #lastUpdated { font-size:0.9rem; display:block; margin-top:5px; }
+button { cursor:pointer; border:none; border-radius:10px; padding:10px 15px; margin:5px; background: rgba(255,255,255,0.2); color: white; font-weight: 500; transition: all 0.3s; }
+button:hover { background: rgba(255,255,255,0.3); transform: translateY(-2px); }
+.sources button.active, .categories button.active { background: rgba(255,255,255,0.9); color: #667eea; box-shadow:0 0 8px rgba(255,255,255,0.5); }
+.news-grid { display:grid; gap:20px; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); }
+.news-card { background:white; border-radius:15px; overflow:hidden; cursor:pointer; transition:0.3s; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+.news-card:hover { transform:translateY(-5px); box-shadow:0 15px 35px rgba(0,0,0,0.2);}
+.news-image { width:100%; height:180px; object-fit:cover; background: linear-gradient(135deg, #f0f2f5, #e2e8f0); display: flex; align-items: center; justify-content: center; color: #666; font-size: 0.9rem;}
+.news-content { padding:15px; }
+.news-source { background:linear-gradient(45deg,#667eea,#764ba2); color:white; padding:4px 10px; border-radius:15px; font-size:11px; font-weight:600; margin-bottom:10px; display:inline-block; text-transform:uppercase; letter-spacing: 0.5px;}
+.news-title { font-weight:700; margin-bottom:10px; line-height:1.3; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; font-size: 1.1rem; color: #2d3748;}
+.news-summary { font-size:0.9rem; color:#555; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; line-height:1.5; margin-bottom: 15px;}
+.news-meta { display:flex; justify-content:space-between; align-items: center; font-size:0.85rem; color:#888; margin-top:10px;}
+.readFullBtn { background: #667eea; color: white; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; }
+.readFullBtn:hover { background: #5a6fd8; }
+#loadMoreBtn { display:block; margin:20px auto; background:#ff6b6b; color:white; font-weight:600; padding: 12px 24px;}
+#loadMoreBtn:hover { background: #ff5252; }
+#modalOverlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); justify-content:center; align-items:flex-start; padding:20px; z-index:1000; overflow-y: auto;}
+#modalCard { background:white; width:100%; max-width: 600px; border-radius:15px; padding:20px; transform:translateY(-50px); opacity: 0; transition:all 0.3s ease; margin: 50px auto; position: relative;}
+#modalCard.show { transform:translateY(0); opacity: 1;}
+.modal-title { font-size: 1.4rem; font-weight: 700; margin-bottom: 15px; color: #2d3748; line-height: 1.3;}
+.modal-content { font-size: 1rem; line-height: 1.6; color: #4a5568; margin-bottom: 20px;}
+.modal-link { display: inline-block; background: #667eea; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: 500;}
+.modal-link:hover { background: #5a6fd8; }
+.close-modal { position: absolute; top: 15px; right: 15px; background: none; color: #999; font-size: 24px; padding: 5px;}
+.close-modal:hover { color: #333; }
+.sources, .categories { display:flex; flex-wrap:wrap; justify-content:center; margin-bottom:10px; }
+.categories { border-top:1px solid rgba(255,255,255,0.3); padding-top:10px; margin-top:10px; }
+.error-message { background: rgba(255,255,255,0.2); color: white; padding: 15px; border-radius: 10px; margin: 20px 0; text-align: center;}
+.loading-spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 1s linear infinite; margin-right: 10px;}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width:768px){
+    .news-grid { grid-template-columns:1fr; }
+    button { flex:1 1 45%; padding:12px 10px; margin:3px; font-size:0.9rem;}
+    #modalCard { margin: 20px auto; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>Global Lens</h1>
+        <span id="lastUpdated"></span>
+    </div>
+
+    <div class="sources">
+        <button class="active" data-source="mixed">Mixed</button>
+        <button data-source="newsapi">NewsAPI</button>
+        <button data-source="rss2json">RSS Feed</button>
+        <button data-source="hackernews">Hacker News</button>
+        <button data-source="reddit">Reddit</button>
+    </div>
+    <div class="categories">
+        <button class="active" data-category="all">All</button>
+        <button data-category="world">World</button>
+        <button data-category="business">Business</button>
+        <button data-category="technology">Technology</button>
+        <button data-category="science">Science</button>
+        <button data-category="health">Health</button>
+        <button data-category="sports">Sports</button>
+        <button data-category="entertainment">Entertainment</button>
+    </div>
+
+    <div id="loading" style="text-align:center;color:white;margin:40px;display:none;">
+        <div class="loading-spinner"></div>Loading news...
+    </div>
+    <div id="error" class="error-message" style="display:none;"></div>
+    <div id="newsContainer" class="news-grid"></div>
+    <button id="loadMoreBtn" style="display:none;">Load More</button>
+</div>
+
+<div id="modalOverlay">
+    <div id="modalCard">
+        <button class="close-modal">&times;</button>
+        <div id="modalContent"></div>
+    </div>
+</div>
+
+<script>
+// Using RSS2JSON service and other CORS-friendly APIs
+const RSS_SOURCES = {
+    rss2json: {
+        world: 'https://rss2json.com/api.json?rss_url=https://feeds.feedburner.com/time/world',
+        business: 'https://rss2json.com/api.json?rss_url=https://feeds.feedburner.com/time/business',
+        technology: 'https://rss2json.com/api.json?rss_url=https://feeds.feedburner.com/time/tech',
+        science: 'https://rss2json.com/api.json?rss_url=https://feeds.feedburner.com/time/health',
+        health: 'https://rss2json.com/api.json?rss_url=https://feeds.feedburner.com/time/health',
+        sports: 'https://rss2json.com/api.json?rss_url=https://rss.espn.com/espn/rss/news',
+        entertainment: 'https://rss2json.com/api.json?rss_url=https://feeds.feedburner.com/time/entertainment'
+    }
+};
+
+// Hacker News API - publicly available
+const HACKERNEWS_API = 'https://hacker-news.firebaseio.com/v0';
+
+// Reddit JSON feeds (public, CORS-enabled)
+const REDDIT_FEEDS = {
+    world: 'https://www.reddit.com/r/worldnews.json',
+    business: 'https://www.reddit.com/r/business.json', 
+    technology: 'https://www.reddit.com/r/technology.json',
+    science: 'https://www.reddit.com/r/science.json',
+    health: 'https://www.reddit.com/r/health.json',
+    sports: 'https://www.reddit.com/r/sports.json',
+    entertainment: 'https://www.reddit.com/r/entertainment.json'
+};
+
+const FALLBACK_IMAGES = {
+    world: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400&h=200&fit=crop',
+    business: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=400&h=200&fit=crop',
+    technology: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=400&h=200&fit=crop',
+    science: 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=400&h=200&fit=crop',
+    health: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1f?w=400&h=200&fit=crop',
+    sports: 'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=400&h=200&fit=crop',
+    entertainment: 'https://images.unsplash.com/photo-1524985069026-dd778a71c7b4?w=400&h=200&fit=crop'
+};
+
+function getFallbackImage(category) {
+    return FALLBACK_IMAGES[category] || FALLBACK_IMAGES.world;
+}
+
+let allArticles = [], displayedCount = 0;
+
+function formatDate(dStr) {
+    const d = new Date(dStr), now = new Date();
+    const diff = (now - d) / 1000;
+    if (diff < 3600) return 'Just now';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function generateSummary(text) {
+    if (!text) return '';
+    text = text.replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').trim();
+    return text.length > 300 ? text.substring(0, 300) + '...' : text;
+}
+
+function createNewsCard(article, sourceName, category) {
+    const card = document.createElement('div');
+    card.className = 'news-card';
+    card.dataset.link = article.link || article.url || '#';
+    card.dataset.source = sourceName;
+    card.dataset.category = category;
+    
+    const imageUrl = article.thumbnail || article.urlToImage || getFallbackImage(category);
+    const imageHtml = imageUrl 
+        ? `<img src="${imageUrl}" class="news-image" onerror="this.outerHTML='<div class=&quot;news-image&quot;>📰 ${category.toUpperCase()}</div>'">`
+        : `<div class="news-image">📰 ${category.toUpperCase()}</div>`;
+    
+    card.innerHTML = `${imageHtml}
+        <div class="news-content">
+            <div class="news-source">${sourceName.toUpperCase()}</div>
+            <h3 class="news-title">${article.title}</h3>
+            <p class="news-summary">${generateSummary(article.description || article.content || '')}</p>
+            <div class="news-meta">
+                <span>${formatDate(article.pubDate || article.publishedAt || article.created_utc * 1000)}</span>
+                <button class="readFullBtn">Read More</button>
+            </div>
+        </div>`;
+    
+    const readBtn = card.querySelector('.readFullBtn');
+    readBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openModal(article, sourceName);
+    });
+    
+    card.addEventListener('click', () => {
+        openModal(article, sourceName);
+    });
+    
+    return card;
+}
+
+function openModal(article, sourceName) {
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalContent = document.getElementById('modalContent');
+    
+    modalContent.innerHTML = `
+        <div class="news-source" style="margin-bottom: 10px;">${sourceName.toUpperCase()}</div>
+        <h2 class="modal-title">${article.title}</h2>
+        <p class="modal-content">${generateSummary(article.description || article.content || '')}</p>
+        <a href="${article.link || article.url || '#'}" target="_blank" class="modal-link">Read Full Article</a>
+    `;
+    
+    modalOverlay.style.display = 'flex';
+    setTimeout(() => document.getElementById('modalCard').classList.add('show'), 50);
+}
+
+function closeModal() {
+    const modalCard = document.getElementById('modalCard');
+    modalCard.classList.remove('show');
+    setTimeout(() => {
+        document.getElementById('modalOverlay').style.display = 'none';
+    }, 300);
+}
+
+async function fetchHackerNews() {
+    try {
+        const response = await fetch(`${HACKERNEWS_API}/topstories.json`);
+        const storyIds = await response.json();
+        
+        // Get first 10 stories
+        const stories = await Promise.all(
+            storyIds.slice(0, 10).map(async (id) => {
+                const storyResponse = await fetch(`${HACKERNEWS_API}/item/${id}.json`);
+                return storyResponse.json();
+            })
+        );
+        
+        return stories.filter(story => story.title).map(story => ({
+            source: 'hackernews',
+            category: 'technology',
+            item: {
+                title: story.title,
+                description: story.text || 'Click to read full discussion on Hacker News',
+                link: story.url || `https://news.ycombinator.com/item?id=${story.id}`,
+                pubDate: new Date(story.time * 1000).toISOString()
+            }
+        }));
+    } catch (error) {
+        console.error('Error fetching Hacker News:', error);
+        return [];
+    }
+}
+
+async function fetchReddit(category) {
+    try {
+        const url = REDDIT_FEEDS[category] || REDDIT_FEEDS.world;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        return data.data.children.map(post => ({
+            source: 'reddit',
+            category: category,
+            item: {
+                title: post.data.title,
+                description: post.data.selftext || post.data.title,
+                link: post.data.url.startsWith('http') ? post.data.url : `https://reddit.com${post.data.permalink}`,
+                pubDate: new Date(post.data.created_utc * 1000).toISOString(),
+                thumbnail: post.data.thumbnail && post.data.thumbnail.startsWith('http') ? post.data.thumbnail : null
+            }
+        }));
+    } catch (error) {
+        console.error('Error fetching Reddit:', error);
+        return [];
+    }
+}
+
+async function fetchRSS2JSON(category) {
+    try {
+        const url = RSS_SOURCES.rss2json[category];
+        if (!url) return [];
+        
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.status !== 'ok') {
+            throw new Error('RSS2JSON API error');
+        }
+        
+        return data.items.map(item => ({
+            source: 'rss2json',
+            category: category,
+            item: {
+                title: item.title,
+                description: item.description,
+                link: item.link,
+                pubDate: item.pubDate,
+                thumbnail: item.thumbnail
+            }
+        }));
+    } catch (error) {
+        console.error('Error fetching RSS2JSON:', error);
+        return [];
+    }
+}
+
+async function fetchNews(source = 'mixed', category = 'all') {
+    const loadingEl = document.getElementById('loading');
+    const errorEl = document.getElementById('error');
+    const containerEl = document.getElementById('newsContainer');
+    
+    loadingEl.style.display = 'block';
+    errorEl.style.display = 'none';
+    containerEl.innerHTML = '';
+    allArticles = [];
+    displayedCount = 0;
+    
+    try {
+        let articles = [];
+        
+        if (source === 'mixed') {
+            // Fetch from multiple sources
+            const [hackerNews, reddit, rss] = await Promise.all([
+                fetchHackerNews(),
+                category === 'all' ? fetchReddit('technology') : fetchReddit(category),
+                category === 'all' ? fetchRSS2JSON('world') : fetchRSS2JSON(category)
+            ]);
+            
+            articles = [...hackerNews, ...reddit, ...rss];
+        } else if (source === 'hackernews') {
+            articles = await fetchHackerNews();
+        } else if (source === 'reddit') {
+            const categories = category === 'all' ? ['world', 'technology', 'science'] : [category];
+            for (const cat of categories) {
+                const redditArticles = await fetchReddit(cat);
+                articles.push(...redditArticles);
+            }
+        } else if (source === 'rss2json') {
+            const categories = category === 'all' ? ['world', 'business', 'technology'] : [category];
+            for (const cat of categories) {
+                const rssArticles = await fetchRSS2JSON(cat);
+                articles.push(...rssArticles);
+            }
+        }
+        
+        // Filter by category if not 'all'
+        if (category !== 'all') {
+            articles = articles.filter(article => article.category === category);
+        }
+        
+        allArticles = articles;
+        
+        // Sort by date (newest first)
+        allArticles.sort((a, b) => {
+            const dateA = new Date(a.item.pubDate || a.item.publishedAt || a.item.created_utc * 1000);
+            const dateB = new Date(b.item.pubDate || b.item.publishedAt || b.item.created_utc * 1000);
+            return dateB - dateA;
+        });
+        
+        document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleString();
+        displayNextBatch();
+        
+        if (allArticles.length === 0) {
+            throw new Error('No articles found for the selected filters.');
+        }
+        
+    } catch (error) {
+        console.error('Error fetching news:', error);
+        errorEl.textContent = 'Unable to load news at the moment. Please try again later.';
+        errorEl.style.display = 'block';
+    } finally {
+        loadingEl.style.display = 'none';
+    }
+}
+
+function displayNextBatch(batchSize = 6) {
+    const container = document.getElementById('newsContainer');
+    const slice = allArticles.slice(displayedCount, displayedCount + batchSize);
+    
+    slice.forEach(article => {
+        container.appendChild(createNewsCard(article.item, article.source, article.category));
+    });
+    
+    displayedCount += slice.length;
+    document.getElementById('loadMoreBtn').style.display = 
+        (displayedCount < allArticles.length) ? 'block' : 'none';
+}
+
+// Event Listeners
+document.getElementById('loadMoreBtn').addEventListener('click', () => displayNextBatch());
+
+document.querySelectorAll('.sources button').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.sources button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const activeCategory = document.querySelector('.categories button.active').dataset.category;
+        fetchNews(btn.dataset.source, activeCategory);
+    });
+});
+
+document.querySelectorAll('.categories button').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.categories button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const activeSource = document.querySelector('.sources button.active').dataset.source;
+        fetchNews(activeSource, btn.dataset.category);
+    });
+});
+
+document.getElementById('modalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'modalOverlay') {
+        closeModal();
+    }
+});
+
+document.querySelector('.close-modal').addEventListener('click', closeModal);
+
+// Initialize the app
+fetchNews();
+</script>
+</body>
+</html>
