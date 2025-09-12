@@ -1,621 +1,175 @@
-<style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
- 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Andy&#39;s Global News</title>
+    <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 10px;
-            padding-bottom: 80px;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0 20px;
+            background-color: #f9f9f9;
         }
- 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
- 
-        .header {
+
+        h1 {
             text-align: center;
-            margin-bottom: 25px;
-            padding: 10px;
+            color: #333;
+            margin: 20px 0;
         }
- 
-        .header h1 {
-            color: white;
-            font-size: clamp(1.8rem, 5vw, 2.5rem);
-            margin-bottom: 8px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
- 
-        .header p {
-            color: rgba(255,255,255,0.9);
-            font-size: clamp(0.9rem, 3vw, 1.1rem);
-            margin-bottom: 10px;
-        }
- 
-        .status-bar {
-            background: rgba(46, 204, 113, 0.15);
-            color: #2ecc71;
-            padding: 10px;
-            border-radius: 8px;
-            text-align: center;
-            font-size: 0.9rem;
-            margin-bottom: 15px;
-            border: 1px solid rgba(46, 204, 113, 0.2);
-        }
- 
+
         .controls {
-            background: rgba(255,255,255,0.15);
-            backdrop-filter: blur(15px);
-            border-radius: 15px;
-            padding: 15px;
-            margin-bottom: 20px;
-            border: 1px solid rgba(255,255,255,0.2);
-        }
- 
-        .control-group {
             display: flex;
-            gap: 10px;
-            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
             flex-wrap: wrap;
         }
- 
-        .control-group label {
-            color: white;
-            font-weight: 600;
-            font-size: 14px;
-            min-width: 70px;
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
- 
-        select, button {
-            padding: 12px 15px;
-            border: none;
-            border-radius: 10px;
-            font-size: 14px;
-            transition: all 0.3s ease;
-            touch-action: manipulation;
-        }
- 
-        select {
-            background: white;
-            color: #333;
-            cursor: pointer;
-            flex: 1;
-            min-width: 120px;
-        }
- 
-        button {
-            background: linear-gradient(45deg, #ff6b6b, #feca57);
-            color: white;
-            font-weight: 600;
-            cursor: pointer;
-            transform: translateY(0);
-            min-width: 140px;
-            white-space: nowrap;
-        }
- 
-        button:hover, button:active {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-        }
- 
-        button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
- 
-        .loading {
-            text-align: center;
-            color: white;
-            font-size: 1rem;
-            margin: 30px 0;
-            padding: 20px;
-        }
- 
-        .spinner {
-            display: inline-block;
-            width: 25px;
-            height: 25px;
-            border: 3px solid rgba(255,255,255,0.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1s ease-in-out infinite;
-            margin-right: 10px;
-        }
- 
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
- 
+
         .news-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: repeat(3, 1fr);
             gap: 20px;
-            margin-top: 20px;
         }
- 
-        .news-card {
-            background: white;
-            border-radius: 15px;
-            overflow: hidden;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-            transition: all 0.3s ease;
-            opacity: 0;
-            transform: translateY(20px);
-            animation: fadeInUp 0.6s ease forwards;
-            cursor: pointer;
-        }
- 
-        .news-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
-        }
- 
-        .news-card:nth-child(odd) { animation-delay: 0.1s; }
-        .news-card:nth-child(even) { animation-delay: 0.2s; }
- 
-        @keyframes fadeInUp {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
- 
-        .news-image {
-            width: 100%;
-            height: 180px;
-            object-fit: cover;
-            background: linear-gradient(45deg, #f0f2f5, #e1e5e9);
-        }
- 
-        .news-content {
-            padding: 18px;
-        }
- 
-        .news-source {
-            display: inline-block;
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-            padding: 4px 10px;
-            border-radius: 15px;
-            font-size: 11px;
-            font-weight: 600;
-            margin-bottom: 10px;
-            text-transform: uppercase;
-        }
- 
-        .news-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: #2c3e50;
-            margin-bottom: 10px;
-            line-height: 1.4;
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
- 
-        .news-summary {
-            color: #555;
-            line-height: 1.5;
-            margin-bottom: 12px;
-            font-size: 0.9rem;
-            display: -webkit-box;
-            -webkit-line-clamp: 4;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
- 
-        .news-meta {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-top: 12px;
-            border-top: 1px solid #eee;
-            font-size: 0.85rem;
-            color: #888;
-        }
- 
-        .news-date {
-            font-weight: 500;
-        }
- 
-        .read-more {
-            color: #667eea;
-            text-decoration: none;
-            font-weight: 600;
-            transition: color 0.3s ease;
-            font-size: 0.85rem;
-        }
- 
-        .error {
-            background: rgba(255,107,107,0.15);
-            color: #ff6b6b;
+
+        .news-item {
+            background: #fff;
             padding: 15px;
-            border-radius: 10px;
-            text-align: center;
-            margin: 20px 0;
-            border: 1px solid rgba(255,107,107,0.2);
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
         }
- 
-        .refresh-btn {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(255,255,255,0.2);
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            font-size: 20px;
-            cursor: pointer;
-            backdrop-filter: blur(10px);
-            transition: all 0.3s ease;
-            z-index: 100;
+
+        .news-item h2 {
+            font-size: 18px;
+            margin-top: 0;
         }
- 
-        .refresh-btn:hover {
-            background: rgba(255,255,255,0.3);
-            transform: scale(1.1);
+
+        .news-item p {
+            font-size: 14px;
+            color: #555;
         }
- 
-        /* Mobile optimizations */
+
+        .news-item a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        .news-item a:hover {
+            text-decoration: underline;
+        }
+
+        /* Mobile tweaks: 2 columns per row */
         @media (max-width: 768px) {
             body {
                 padding: 5px;
                 padding-bottom: 80px;
             }
- 
+
             .controls {
                 padding: 12px;
             }
- 
+
             .control-group {
                 flex-direction: column;
                 align-items: stretch;
                 gap: 8px;
             }
- 
+
             .control-group label {
                 min-width: auto;
                 align-self: flex-start;
             }
- 
+
             .news-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: repeat(2, 1fr);
                 gap: 15px;
             }
         }
     </style>
- 
-    <button class="refresh-btn" onclick="fetchNews()" title="Refresh News">🔄</button>
- 
-    <div class="container">
-        <div class="header">
-            <h1>🌍 Andy's Global News</h1>
-            <p>Live RSS feeds from trusted news sources worldwide</p>
+</head>
+<body>
+    <h1>Andy&#39;s Global News</h1>
+
+    <div class="controls">
+        <div class="control-group">
+            <label for="country">Country:</label>
+            <select id="country">
+                <option value="">All</option>
+                <option value="us">United States</option>
+                <option value="ca">Canada</option>
+                <option value="gb">United Kingdom</option>
+                <option value="au">Australia</option>
+            </select>
         </div>
- 
-        <div class="status-bar">
-            ✅ <strong>Ready to use!</strong> No API keys needed - powered by RSS feeds
+
+        <div class="control-group">
+            <label for="category">Category:</label>
+            <select id="category">
+                <option value="">All</option>
+                <option value="business">Business</option>
+                <option value="technology">Technology</option>
+                <option value="entertainment">Entertainment</option>
+                <option value="sports">Sports</option>
+                <option value="science">Science</option>
+                <option value="health">Health</option>
+            </select>
         </div>
- 
-        <div class="controls">
-            <div class="control-group">
-                <label for="source">News Source:</label>
-                <select id="source">
-                    <option value="mixed">📰 Mixed Sources</option>
-                    <option value="bbc">🇬🇧 BBC News</option>
-                    <option value="cnn">🇺🇸 CNN</option>
-                    <option value="reuters">🌍 Reuters</option>
-                    <option value="ap">📡 Associated Press</option>
-                    <option value="guardian">🇬🇧 The Guardian</option>
-                    <option value="nyt">🇺🇸 NY Times</option>
-                    <option value="techcrunch">💻 TechCrunch</option>
-                </select>
- 
-                <label for="category">Category:</label>
-                <select id="category">
-                    <option value="world">🌍 World</option>
-                    <option value="business">💼 Business</option>
-                    <option value="technology">💻 Technology</option>
-                    <option value="science">🔬 Science</option>
-                    <option value="health">🏥 Health</option>
-                    <option value="sports">⚽ Sports</option>
-                </select>
- 
-                <button id="fetchNews" onclick="fetchNews()">📰 Get News</button>
-            </div>
-        </div>
- 
-        <div id="loading" class="loading" style="display: none;">
-            <div class="spinner"></div>
-            Fetching from RSS feeds...
-        </div>
- 
-        <div id="error" class="error" style="display: none;"></div>
- 
-        <div id="newsContainer" class="news-grid"></div>
     </div>
- 
+
+    <div id="news" class="news-grid"></div>
+
     <script>
-        // RSS feed sources
-        const RSS_SOURCES = {
-            'bbc': {
-                world: 'http://feeds.bbci.co.uk/news/world/rss.xml',
-                business: 'http://feeds.bbci.co.uk/news/business/rss.xml',
-                technology: 'http://feeds.bbci.co.uk/news/technology/rss.xml',
-                science: 'http://feeds.bbci.co.uk/news/science_and_environment/rss.xml',
-                health: 'http://feeds.bbci.co.uk/news/health/rss.xml',
-                sports: 'http://feeds.bbci.co.uk/sport/rss.xml'
-            },
-            'cnn': {
-                world: 'http://rss.cnn.com/rss/edition.rss',
-                business: 'http://rss.cnn.com/rss/money_latest.rss',
-                technology: 'http://rss.cnn.com/rss/edition_technology.rss',
-                science: 'http://rss.cnn.com/rss/edition_space.rss',
-                health: 'http://rss.cnn.com/rss/edition_health.rss',
-                sports: 'http://rss.cnn.com/rss/edition_sport.rss'
-            },
-            'reuters': {
-                world: 'https://feeds.reuters.com/reuters/topNews',
-                business: 'https://feeds.reuters.com/reuters/businessNews',
-                technology: 'https://feeds.reuters.com/reuters/technologyNews',
-                science: 'https://feeds.reuters.com/reuters/scienceNews',
-                health: 'https://feeds.reuters.com/reuters/healthNews',
-                sports: 'https://feeds.reuters.com/reuters/sportsNews'
-            },
-            'ap': {
-                world: 'https://feeds.apnews.com/rss/apf-topnews',
-                business: 'https://feeds.apnews.com/rss/apf-business',
-                technology: 'https://feeds.apnews.com/rss/apf-technology',
-                science: 'https://feeds.apnews.com/rss/apf-science',
-                health: 'https://feeds.apnews.com/rss/apf-health',
-                sports: 'https://feeds.apnews.com/rss/apf-sports'
-            },
-            'guardian': {
-                world: 'https://www.theguardian.com/world/rss',
-                business: 'https://www.theguardian.com/business/rss',
-                technology: 'https://www.theguardian.com/technology/rss',
-                science: 'https://www.theguardian.com/science/rss',
-                health: 'https://www.theguardian.com/society/health/rss',
-                sports: 'https://www.theguardian.com/sport/rss'
-            },
-            'nyt': {
-                world: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',
-                business: 'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml',
-                technology: 'https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml',
-                science: 'https://rss.nytimes.com/services/xml/rss/nyt/Science.xml',
-                health: 'https://rss.nytimes.com/services/xml/rss/nyt/Health.xml',
-                sports: 'https://rss.nytimes.com/services/xml/rss/nyt/Sports.xml'
-            },
-            'techcrunch': {
-                world: 'https://feeds.feedburner.com/TechCrunch/',
-                business: 'https://feeds.feedburner.com/TechCrunch/',
-                technology: 'https://feeds.feedburner.com/TechCrunch/',
-                science: 'https://feeds.feedburner.com/TechCrunch/',
-                health: 'https://feeds.feedburner.com/TechCrunch/',
-                sports: 'https://feeds.feedburner.com/TechCrunch/'
-            }
-        };
- 
-        function formatDate(dateString) {
-            const date = new Date(dateString);
-            const now = new Date();
-            const diffTime = Math.abs(now - date);
-            const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
-            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
- 
-            if (diffHours < 1) return 'Just now';
-            if (diffHours < 24) return `${diffHours}h ago`;
-            if (diffDays < 7) return `${diffDays}d ago`;
- 
-            return date.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric'
-            });
-        }
- 
-        function generateSummary(description, content) {
-            let text = description || content || '';
- 
-            // Clean HTML tags
-            text = text.replace(/<[^>]*>/g, '');
-            text = text.replace(/&[^;]+;/g, ' ');
- 
-            // Get first 2 sentences or 200 characters
-            const sentences = text.split(/[.!?]+/);
-            if (sentences.length > 1 && sentences[0].length > 50) {
-                return sentences.slice(0, 2).join('. ').trim() + '.';
-            }
- 
-            return text.length > 200 ? text.substring(0, 200).trim() + '...' : text;
-        }
- 
-        function getRandomImage(category) {
-            const images = {
-                world: [
-                    'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1586769852044-692d6df3490f?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1495020689067-958852a7765e?w=400&h=200&fit=crop'
-                ],
-                business: [
-                    'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1590479773265-7464e5d48118?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=200&fit=crop'
-                ],
-                technology: [
-                    'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=400&h=200&fit=crop'
-                ],
-                science: [
-                    'https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&h=200&fit=crop'
-                ],
-                health: [
-                    'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1576091160399-112ba8d25d1f?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1505751172876-fa1923c5c528?w=400&h=200&fit=crop'
-                ],
-                sports: [
-                    'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=400&h=200&fit=crop',
-                    'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=200&fit=crop'
-                ]
-            };
- 
-            const categoryImages = images[category] || images.world;
-            return categoryImages[Math.floor(Math.random() * categoryImages.length)];
-        }
- 
-        function createNewsCard(article, sourceName) {
-            const summary = generateSummary(article.description, article.content);
-            const imageUrl = getRandomImage(document.getElementById('category').value);
- 
-            return `
-                <div class="news-card" onclick="window.open('${article.link}', '_blank')">
-                    <img src="${imageUrl}"
-                         alt="News Image"
-                         class="news-image"
-                         onerror="this.src='${getRandomImage(document.getElementById('category').value)}'">
-                    <div class="news-content">
-                        <div class="news-source">${sourceName}</div>
-                        <h3 class="news-title">${article.title}</h3>
-                        <p class="news-summary">${summary}</p>
-                        <div class="news-meta">
-                            <span class="news-date">${formatDate(article.pubDate)}</span>
-                            <span class="read-more">Read More →</span>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
- 
-        function displayNews(articles) {
-            const container = document.getElementById('newsContainer');
-            container.innerHTML = articles.map(article => createNewsCard(article.item, article.source)).join('');
-        }
- 
-        function showLoading(show) {
-            document.getElementById('loading').style.display = show ? 'block' : 'none';
-            document.getElementById('fetchNews').disabled = show;
-        }
- 
-        function showError(message) {
-            const errorDiv = document.getElementById('error');
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            setTimeout(() => {
-                errorDiv.style.display = 'none';
-            }, 5000);
-        }
- 
-        async function parseRSSFeed(url, sourceName) {
-            try {
-                const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=&count=10`;
-                const response = await fetch(proxyUrl);
-                const data = await response.json();
- 
-                if (data.status !== 'ok') {
-                    throw new Error(`RSS parsing failed: ${data.message || 'Unknown error'}`);
-                }
- 
-                return data.items.map(item => ({
-                    source: sourceName,
-                    item: {
-                        title: item.title,
-                        description: item.description,
-                        content: item.content,
-                        link: item.link,
-                        pubDate: item.pubDate,
-                        author: item.author
-                    }
-                }));
- 
-            } catch (error) {
-                console.error(`Error parsing RSS from ${sourceName}:`, error);
-                return [];
-            }
-        }
- 
+        const countrySelect = document.getElementById('country');
+        const categorySelect = document.getElementById('category');
+        const newsContainer = document.getElementById('news');
+
         async function fetchNews() {
-            const sourceSelect = document.getElementById('source').value;
-            const category = document.getElementById('category').value;
- 
-            showLoading(true);
-            document.getElementById('error').style.display = 'none';
-            document.getElementById('newsContainer').innerHTML = '';
- 
-            try {
-                let allArticles = [];
- 
-                if (sourceSelect === 'mixed') {
-                    const sources = ['bbc', 'reuters', 'ap', 'guardian'];
-                    const fetchPromises = sources.map(async (source) => {
-                        const url = RSS_SOURCES[source][category];
-                        const sourceName = getSourceDisplayName(source);
-                        return await parseRSSFeed(url, sourceName);
-                    });
- 
-                    const results = await Promise.allSettled(fetchPromises);
-                    results.forEach(result => {
-                        if (result.status === 'fulfilled') {
-                            allArticles.push(...result.value);
-                        }
-                    });
- 
-                } else {
-                    const url = RSS_SOURCES[sourceSelect][category];
-                    const sourceName = getSourceDisplayName(sourceSelect);
-                    allArticles = await parseRSSFeed(url, sourceName);
-                }
- 
-                const goodArticles = allArticles
-                    .filter(article =>
-                        article.item.title &&
-                        article.item.description &&
-                        article.item.title.length > 20 &&
-                        article.item.description.length > 50
-                    )
-                    .sort((a, b) => new Date(b.item.pubDate) - new Date(a.item.pubDate))
-                    .slice(0, 12);
- 
-                if (goodArticles.length === 0) {
-                    throw new Error('No articles found. Please try a different source or category.');
-                }
- 
-                displayNews(goodArticles);
- 
-            } catch (error) {
-                console.error('Error fetching news:', error);
-                showError(`Failed to fetch news: ${error.message}`);
-            } finally {
-                showLoading(false);
-            }
+            const country = countrySelect.value;
+            const category = categorySelect.value;
+            const url = `https://api.rss2json.com/v1/api.json?rss_url=https://news.google.com/rss?hl=en-${country || 'us'}&gl=${country || 'US'}&ceid=${country || 'US'}:en`;
+
+            const response = await fetch(url);
+            const data = await response.json();
+
+            const allArticles = data.items || [];
+            const goodArticles = allArticles
+                .filter(article =>
+                    article.title &&
+                    article.description &&
+                    article.title.length > 20 &&
+                    article.description.length > 50
+                )
+                .sort((a, b) =>
+                    new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()
+                )
+                .slice(0, 12);
+
+            renderNews(goodArticles);
         }
- 
-        function getSourceDisplayName(source) {
-            const names = {
-                'bbc': 'BBC News',
-                'cnn': 'CNN',
-                'reuters': 'Reuters',
-                'ap': 'Associated Press',
-                'guardian': 'The Guardian',
-                'nyt': 'New York Times',
-                'techcrunch': 'TechCrunch'
-            };
-            return names[source] || source.toUpperCase();
+
+        function renderNews(articles) {
+            newsContainer.innerHTML = articles.map(a => `
+                <div class="news-item">
+                    <h2><a href="${a.link}" target="_blank" rel="noopener">${a.title}</a></h2>
+                    <p>${a.description}</p>
+                </div>
+            `).join('');
         }
- 
-        // Auto-load news when page loads
-        setTimeout(fetchNews, 1000);
+
+        countrySelect.addEventListener('change', fetchNews);
+        categorySelect.addEventListener('change', fetchNews);
+
+        fetchNews();
     </script>
+</body>
+</html>
+
