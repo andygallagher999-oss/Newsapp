@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens – Markets</title>
+<style>
+  body { font-family: Arial, sans-serif; padding:1rem; background:#f5f5f5; }
+  h1 { text-align:center; }
+  .market-card {
+    background:white; padding:1rem; margin:1rem auto;
+    max-width:400px; border-radius:12px;
+    box-shadow:0 2px 6px rgba(0,0,0,0.1);
+  }
+  .name { font-weight:bold; margin-bottom:0.5rem; }
+</style>
+</head>
+<body>
+  <h1>Market Indices</h1>
+  <div id="markets"></div>
+
+<script>
+async function loadMarkets(){
+    const symbols = ["^GSPC","^DJI","^IXIC","^TSX"]; // S&P500, Dow, Nasdaq, TSX
+    const container = document.getElementById("markets");
+
+    for (const s of symbols){
+        try {
+            const res = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${s}`);
+            const data = await res.json();
+            const q = data.quoteResponse.result[0];
+            const card = document.createElement("div");
+            card.className = "market-card";
+            card.innerHTML = `
+              <div class="name">${q.shortName || s}</div>
+              <div>Price: ${q.regularMarketPrice}</div>
+              <div>Change: ${q.regularMarketChange.toFixed(2)}
+                   (${q.regularMarketChangePercent.toFixed(2)}%)</div>`;
+            container.appendChild(card);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+}
+loadMarkets();
+</script>
+</body>
+</html>
