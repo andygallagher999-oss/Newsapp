@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    background: #f5f5f5;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: #1a1a1a;
+    color: white;
+    flex-wrap: wrap;
+  }
+  h1 {
+    margin: 0;
+    font-size: 1.6rem;
+  }
+  .date {
+    font-size: 0.9rem;
+  }
+  .button-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid #ccc;
+    background: #fff;
+  }
+  .button-bar h2 {
+    flex-basis: 100%;
+    margin: 0.3rem 0;
+    font-size: 1rem;
+    color: #444;
+  }
+  .news-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+  }
+  .news-card {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+  }
+  .news-image {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+  }
+  .news-content {
+    padding: 0.8rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .news-title {
+    margin: 0 0 0.5rem;
+    font-size: 1.1rem;
+  }
+  .news-summary {
+    flex: 1;
+    font-size: 0.9rem;
+    color: #333;
+  }
+  .news-meta {
+    font-size: 0.8rem;
+    color: #666;
+    margin-top: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+  }
+  .source-buttons,
+  .category-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .btn {
+    background: #0077cc;
+    color: white;
+    border: none;
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .btn:hover { background: #005fa3; }
+  @media (max-width: 600px) {
+    h1 { font-size: 1.3rem; }
+    .btn { font-size: 0.8rem; padding: 0.35rem 0.6rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Global Lens</h1>
+  <div class="date" id="current-date"></div>
+</header>
+
+<!-- Source buttons -->
+<div class="button-bar">
+  <h2>Sources</h2>
+  <div class="source-buttons" id="sourceButtons"></div>
+</div>
+
+<!-- Category buttons -->
+<div class="button-bar">
+  <h2>Categories</h2>
+  <div class="category-buttons" id="categoryButtons"></div>
+</div>
+
+<div id="news" class="news-container"></div>
+
+<script>
+// ----- CONFIG ----- //
+const rssFeeds = {
+  BBC:     "https://feeds.bbci.co.uk/news/rss.xml",
+  NYTimes: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+  Guardian:"https://www.theguardian.com/world/rss",
+  NPR:     "https://feeds.npr.org/1001/rss.xml"
+};
+
+const categories = [
+  "World","Business","Technology",
+  "Science","Health","Sports","Entertainment"
+];
+
+// show today’s date
+document.getElementById('current-date').textContent =
+  new Date().toLocaleDateString(undefined,
+    { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+// Build source buttons
+const srcDiv = document.getElementById('sourceButtons');
+for (const s in rssFeeds) {
+  const b = document.createElement('button');
+  b.textContent = s;
+  b.className = 'btn';
+  b.onclick = () => fetchNews(s, selectedCategory);
+  srcDiv.appendChild(b);
+}
+// Markets page link
+const marketsBtn = document.createElement('button');
+marketsBtn.textContent = 'Markets';
+marketsBtn.className  = 'btn';
+marketsBtn.onclick    = () => window.location.href = 'markets.html';
+srcDiv.appendChild(marketsBtn);
+
+// Build category buttons
+const catDiv = document.getElementById('categoryButtons');
+let selectedCategory = 'All';
+const allBtn = document.createElement('button');
+allBtn.textContent = 'All';
+allBtn.className   = 'btn';
+allBtn.onclick     = () => { selectedCategory = 'All'; fetchNews(selectedSource, 'All'); };
+catDiv.appendChild(allBtn);
+categories.forEach(c => {
+  const b = document.createElement('button');
+  b.textContent = c;
+  b.className   = 'btn';
+  b.onclick     = () => { selectedCategory = c; fetchNews(selectedSource, c); };
+  catDiv.appendChild(b);
+});
+
+let selectedSource = 'BBC'; // default
+
+// ----- FETCH & DISPLAY ----- //
+async function fetchNews(source, category) {
+  selectedSource = source;
+  const container = document.getElementById('news');
+  container.innerHTML = "Loading…";
+
+  try {
+    const url = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssFeeds[source])}`;
+    const data = await fetch(url).then(r => r.json());
+    let items  = data.items || [];
+
+    // filter by category if chosen
+    if (category !== 'All') {
+      const key = category.toLowerCase();
+      items = items.filter(i =>
+        (i.categories || []).join(' ').toLowerCase().includes(key)
+      );
+    }
+
+    // sort newest first by UTC timestamp
+    items.sort((a,b) =>
+      new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()
+    );
+
+    container.innerHTML = items.map(i => newsCard(i, source)).join('');
+  } catch (e) {
+    console.error(e);
+    container.innerHTML = "Failed to load news.";
+  }
+}
+
+function newsCard(item, src) {
+  const img = item.enclosure?.link
+    || "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400&h=200&fit=crop";
+  const d   = new Date(item.pubDate);
+  return `
+    <div class="news-card" onclick="window.open('${item.link}','_blank')">
+      <img src="${img}" class="news-image"
+           onerror="this.src='https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400&h=200&fit=crop'">
+      <div class="news-content">
+        <div class="news-source">${src}</div>
+        <h3 class="news-title">${item.title}</h3>
+        <p class="news-summary">${(item.description || '').slice(0,150)}…</p>
+        <div class="news-meta">
+          <span class="news-date">${d.toLocaleString()}</span>
+          <span class="read-more">Read More →</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+// initial load
+fetchNews('BBC','All');
+</script>
+</body>
+</html>
