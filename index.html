@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌐 Global Lens</title>
+<style>
+* {margin:0;padding:0;box-sizing:border-box;}
+body {font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif;
+      background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+      min-height:100vh;padding:10px;padding-bottom:80px;}
+h1 {color:white;text-align:center;margin-bottom:20px;font-size:2rem;text-shadow:0 2px 4px rgba(0,0,0,0.3);}
+.buttons-row {display:flex; justify-content:space-between; flex-wrap:wrap; margin-bottom:10px;}
+.buttons-row button {flex:1;padding:10px 15px;margin:3px;border:none;border-radius:10px;cursor:pointer;background:#fff;color:#333;transition:0.3s;text-align:center;}
+.buttons-row button.active {background:linear-gradient(45deg,#667eea,#764ba2); color:white;}
+.separator {height:2px;background:rgba(255,255,255,0.3);margin:5px 0;}
+.news-grid {display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:15px;}
+.news-card {background:white;border-radius:15px;overflow:hidden;box-shadow:0 8px 25px rgba(0,0,0,0.1);cursor:pointer;transition:all 0.3s;}
+.news-card:hover {transform:translateY(-3px);box-shadow:0 15px 35px rgba(0,0,0,0.15);}
+.news-image {width:100%;height:180px;object-fit:cover;background:#f0f2f5;}
+.news-content {padding:15px;}
+.news-source {display:inline-block;background:linear-gradient(45deg,#667eea,#764ba2);color:white;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:600;margin-bottom:8px;text-transform:uppercase;}
+.news-title {font-size:1.1rem;font-weight:700;color:#2c3e50;margin-bottom:8px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.news-summary {color:#555;line-height:1.5;font-size:0.9rem;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical;overflow:hidden;}
+.news-meta {display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid #eee;font-size:0.85rem;color:#888;}
+.readFullBtn {background:linear-gradient(45deg,#ff6b6b,#feca57);border:none;color:white;padding:6px 12px;border-radius:8px;cursor:pointer;}
+.numeric-card {background:linear-gradient(135deg,#ff9a9e,#fad0c4);color:white;font-weight:bold;}
+.numeric-card .news-title {color:white;}
+.numeric-card .news-summary {color:white;}
+.loading {text-align:center;color:white;font-size:1rem;margin:30px 0;padding:20px; display:none;}
+.modal-overlay {position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:none;justify-content:center;align-items:flex-end;z-index:1000;}
+.modal-card {background:white;width:100%;max-height:90%;border-radius:15px 15px 0 0;overflow:auto;padding:15px;transform:translateY(100%);transition:transform 0.3s ease;}
+.modal-card.show {transform:translateY(0);}
+#topBtn {position:fixed;bottom:20px;right:20px;background:#667eea;color:white;border:none;border-radius:50%;width:50px;height:50px;font-size:16px;cursor:pointer;box-shadow:0 4px 6px rgba(0,0,0,0.3);display:none;z-index:1500;}
+@media(max-width:768px){.news-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<h1>🌐 Global Lens</h1>
+
+<div class="buttons-row sources">
+    <button class="active" data-source="all">All</button>
+    <button data-source="bbc">BBC</button>
+    <button data-source="guardian">Guardian</button>
+    <button data-source="npr">NPR</button>
+    <button data-source="billboard">Billboard</button>
+    <button data-source="cnbc">CNBC</button>
+    <button data-source="bloomberg">Bloomberg</button>
+    <button data-source="markets">Markets</button>
+</div>
+
+<div class="separator"></div>
+
+<div class="buttons-row categories">
+    <button class="active" data-category="all">All</button>
+    <button data-category="world">World</button>
+    <button data-category="business">Business</button>
+    <button data-category="technology">Technology</button>
+    <button data-category="science">Science</button>
+    <button data-category="health">Health</button>
+    <button data-category="sports">Sports</button>
+    <button data-category="culture">Culture</button>
+</div>
+
+<div class="loading" id="loading">Fetching news...</div>
+<div class="news-grid" id="newsContainer"></div>
+<div class="modal-overlay" id="modalOverlay">
+    <div class="modal-card" id="modalCard"></div>
+</div>
+<button id="topBtn">Top</button>
+
+<script>
+const FINNHUB_KEY = "d32q9dhr01qtm6316bk0d32q9dhr01qtm6316bkg";
+const RSS_SOURCES = {
+  bbc: {world:'https://feeds.bbci.co.uk/news/world/rss.xml',business:'https://feeds.bbci.co.uk/news/business/rss.xml',technology:'https://feeds.bbci.co.uk/news/technology/rss.xml',science:'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml',health:'https://feeds.bbci.co.uk/news/health/rss.xml',sports:'https://feeds.bbci.co.uk/sport/rss.xml',culture:'https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml'},
+  guardian: {world:'https://www.theguardian.com/world/rss',business:'https://www.theguardian.com/business/rss',technology:'https://www.theguardian.com/technology/rss',science:'https://www.theguardian.com/science/rss',health:'https://www.theguardian.com/society/health/rss',sports:'https://www.theguardian.com/sport/rss',culture:'https://www.theguardian.com/culture/rss'},
+  npr: {world:'https://feeds.npr.org/1004/rss.xml',culture:'https://feeds.npr.org/1008/rss.xml'},
+  billboard: {culture:'https://www.billboard.com/feed/'},
+  cnbc: {business:'https://www.cnbc.com/id/100003114/device/rss/rss.html'},
+  bloomberg: {business:'https://feeds.bloomberg.com/markets/news.rss'}
+};
+const YAHOO_MARKET_FEEDS = {
+  '^GSPC':'https://finance.yahoo.com/rss/headline?s=%5EGSPC',
+  '^DJI':'https://finance.yahoo.com/rss/headline?s=%5EDJI',
+  '^IXIC':'https://finance.yahoo.com/rss/headline?s=%5EIXIC',
+  '^GSPTSE':'https://finance.yahoo.com/rss/headline?s=%5EGSPTSE'
+};
+
+function generateSummary(text){if(!text)return''; text=text.replace(/<[^>]*>/g,'').replace(/&[^;]+;/g,' '); return text.length>500?text.substring(0,500)+'…':text;}
+function formatDate(d){const date=new Date(d), now=new Date(); const diffH=Math.floor((now-date)/3600000), diffD=Math.floor(diffH/24); if(diffH<1)return'Just now'; if(diffH<24)return diffH+'h ago'; if(diffD<7)return diffD+'d ago'; return date.toLocaleDateString('en-US',{month:'short', day:'numeric});}
+function getFallbackImage(){return 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=400&h=200&fit=crop';}
+
+let allArticles=[],displayedCount=0;
+
+async function parseRSS(url,src){
+  try{
+    const proxy=`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`;
+    const res=await fetch(proxy);
+    const data=await res.json();
+    if(data.status!=='ok') return [];
+    return data.items.map(i=>({source:src,item:i}));
+  }catch(e){return[];}
+}
+
+function createNewsCard(article,source){
+  const card=document.createElement('div'); 
+  card.className='news-card'+(article.type==='numeric'?' numeric-card':'');
+  const content=document.createElement('div'); content.className='news-content';
+  if(article.type==='numeric'){ 
+    const title=document.createElement('h3'); title.className='news-title'; title.textContent=article.title; content.appendChild(title);
+    const summary=document.createElement('p'); summary.className='news-summary'; summary.textContent=article.description; content.appendChild(summary);
+  } else {
+    const img=document.createElement('img'); img.className='news-image';
+    img.src=article.thumbnail||getFallbackImage();
+    img.onerror=()=>img.src=getFallbackImage();
+    card.appendChild(img);
+    const srcDiv=document.createElement('div'); srcDiv.className='news-source'; srcDiv.textContent=source; content.appendChild(srcDiv);
+    const title=document.createElement('h3'); title.className='news-title'; title.textContent=article.title; content.appendChild(title);
+    const summary=document.createElement('p'); summary.className='news-summary'; summary.textContent=generateSummary(article.content||article.description); content.appendChild(summary);
+  }
+  const meta=document.createElement('div'); meta.className='news-meta';
+  const dateSpan=document.createElement('span'); dateSpan.textContent=formatDate(article.pubDate||article.date); meta.appendChild(dateSpan);
+  const btn=document.createElement('button'); btn.className='readFullBtn'; btn.textContent='Read Full Article';
+  btn.addEventListener('click',(e)=>{e.stopPropagation(); window.open(article.link,'_blank');});
+  meta.appendChild(btn);
+  content.appendChild(meta);
+  card.appendChild(content);
+  card.addEventListener('click',()=>{
+    const modalOverlay=document.getElementById('modalOverlay'); 
+    const modalCard=document.getElementById('modalCard'); 
+    modalCard.innerHTML=`<h2>${article.title}</h2><p>${generateSummary(article.content||article.description||article.description)}</p><button onclick="window.open('${article.link}','_blank')">Read Full Article</button>`; 
+    modalOverlay.style.display='flex'; 
+    setTimeout(()=>modalCard.classList.add('show'),50);
+  });
+  return card;
+}
+
+async function fetchMarkets(){
+  document.getElementById('loading').style.display='block';
+  allArticles=[]; displayedCount=0; 
+  // Numeric cards
+  const indices=[{symbol:'^GSPC',name:'S&P 500'},{symbol:'^DJI',name:'Dow Jones'},{symbol:'^IXIC',name:'Nasdaq'},{symbol:'^GSPTSE',name:'TSX'}];
+  for(const idx of indices){
+    try{
+      const res=await fetch(`https://finnhub.io/api/v1/quote?symbol=${idx.symbol}&token=${FINNHUB_KEY}`);
+      const data=await res.json();
+      allArticles.push({type:'numeric',title:idx.name,description:`Price: ${data.c}\nChange: ${data.d} (${data.dp}%)`,date:new Date()});
+    }catch(e){console.error(e);}
+  }
+  // Market RSS headlines
+  for(const sym in YAHOO_MARKET_FEEDS){
+    const rssArticles=await parseRSS(YAHOO_MARKET_FEEDS[sym],'Yahoo Finance');
+    rssArticles.forEach(a=>a.type='news');
+    allArticles.push(...rssArticles.map(a=>a.item));
+  }
+  allArticles.sort((a,b)=>new Date(b.pubDate||b.date)-new Date(a.pubDate||a.date));
+  displayNextBatch();
+  document.getElementById('loading').style.display='none';
+}
+
+async function fetchNews(source='all',category='all'){
+  document.getElementById('loading').style.display='block';
+  allArticles=[]; displayedCount=0;
+  const sourcesArr=(source==='all')?Object.keys(RSS_SOURCES).filter(s=>s!=='markets'):[source];
+  let tempArticles=[];
+  for(const src of sourcesArr){
+    const cats=(category==='all')?Object.keys(RSS_SOURCES[src]):[category];
+    for(const cat of cats){
+      if(!RSS_SOURCES[src][cat]) continue;
+      const arts=await parseRSS(RSS_SOURCES[src][cat],src);
+      arts.forEach(a=>a.type='news');
+      tempArticles.push(...arts.map(a=>a.item));
+    }
+  }
+  tempArticles.sort((a,b)=>new Date(b.pubDate)-new Date(a.pubDate));
+  allArticles=tempArticles;
+  displayNextBatch();
+  document.getElementById('loading').style.display='none';
+}
+
+function displayNextBatch(batchSize=6){
+  const container=document.getElementById('newsContainer');
+  const slice=allArticles.slice(displayedCount,displayedCount+batchSize);
+  slice.forEach(a=>container.appendChild(createNewsCard(a,a.source)));
+  displayedCount+=slice.length;
+}
+
+document.querySelectorAll('.sources button').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.sources button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const cat=document.querySelector('.categories button.active').dataset.category;
+    if(btn.dataset.source==='markets'){fetchMarkets();} else {fetchNews(btn.dataset.source,cat);}
+  });
+});
+document.querySelectorAll('.categories button').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.categories button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const src=document.querySelector('.sources button.active').dataset.source;
+    if(src==='markets'){fetchMarkets();} else {fetchNews(src,btn.dataset.category);}
+  });
+});
+
+document.getElementById('modalOverlay').addEventListener('click',e=>{
+  if(e.target.id==='modalOverlay'){ const modalCard=document.getElementById('modalCard'); modalCard.classList.remove('show'); setTimeout(()=>{document.getElementById('modalOverlay').style.display='none';},300);}
+});
+
+const topBtn=document.getElementById('topBtn');
+topBtn.addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));
+window.addEventListener('scroll',()=>{topBtn.style.display=(window.scrollY>300)?'block':'none';});
+window.addEventListener('scroll',()=>{if(window.innerHeight + window.scrollY >= document.body.offsetHeight - 100){displayNextBatch();}});
+
+// Initial load
+fetchNews();
+</script>
+
+</body>
+</html>
