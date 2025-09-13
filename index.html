@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<style>
+  body { font-family: Arial, sans-serif; margin:0; background:#f5f5f5; }
+  h1 { text-align:center; padding:1rem; }
+  .tabs { display:flex; justify-content:center; flex-wrap:wrap; border-bottom:1px solid #ccc; background:#fff; }
+  .tab-btn { padding:0.5rem 1rem; cursor:pointer; border:none; background:none; font-size:1rem; }
+  .tab-btn.active { border-bottom:3px solid #007BFF; font-weight:bold; }
+  #feed { padding:1rem; max-width:900px; margin:0 auto; }
+  .news-card { background:#fff; margin:1rem 0; padding:1rem; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.1); }
+  .news-card img { max-width:100%; border-radius:6px; margin-bottom:0.5rem; }
+  .source { font-size:0.8rem; color:#555; margin-bottom:0.3rem; }
+  .markets-container { display:flex; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem; }
+  .market-card { flex:1 1 120px; background:#e6f0ff; padding:0.5rem; border-radius:8px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.9rem; }
+</style>
+</head>
+<body>
+
+<h1>Global Lens</h1>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="all">All</button>
+  <button class="tab-btn" data-tab="news">News</button>
+  <button class="tab-btn" data-tab="culture">Culture</button>
+  <button class="tab-btn" data-tab="markets">Markets</button>
+</div>
+
+<div id="feed">Loading...</div>
+
+<script>
+const FINNHUB_API_KEY = 'YOUR_FINNHUB_API_KEY_HERE';
+const RSS2JSON_API_KEY = 'YOUR_RSS2JSON_API_KEY_HERE';
+
+const feeds = {
+  news: [
+    {name:'BBC World', url:'http://feeds.bbci.co.uk/news/world/rss.xml'},
+    {name:'CNBC', url:'https://www.cnbc.com/id/100003114/device/rss/rss.html'},
+    {name:'The Guardian', url:'https://www.theguardian.com/world/rss'}
+  ],
+  culture: [
+    {name:'Billboard', url:'https://www.billboard.com/feed/'},
+    {name:'NPR Culture', url:'https://www.npr.org/rss/rss.php?id=1019'}
+  ],
+  markets: [
+    {name:'S&P500','symbol':'^GSPC'},
+    {name:'Dow','symbol':'^DJI'},
+    {name:'Nasdaq','symbol':'^IXIC'},
+    {name:'TSX','symbol':'^GSPTSE'}
+  ]
+};
+
+let activeTab = 'all';
+
+// --- Utility Functions ---
+async function parseRSS(url) {
+  try {
+    const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=${RSS2JSON_API_KEY}&count=20`);
+    const data = await res.json();
+    return data.items || [];
+  } catch(e) {
+    console.error('Failed RSS', url, e);
+    return [];
+  }
+}
+
+async function fetchMarketData(symbol) {
+  try {
+    const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_API_KEY}`);
+    const data = await res.json();
+    return data;
+  } catch(e) {
+    console.error('Failed Market Data', symbol, e);
+    return null;
+  }
+}
+
+// --- Rendering ---
+async function renderMarkets() {
+  const container = document.getElementById('feed');
+  container.innerHTML = '';
+  const marketsDiv = document.createElement('div');
+  marketsDiv.className = 'markets-container';
+
+  for(const m of feeds.markets){
+    const data = await fetchMarketData(m.symbol);
+    const changePercent = data && data.c ? ((data.c - data.pc)/data.pc*100).toFixed(2) : '--';
+    const direction = changePercent>0 ? '▲' : (changePercent<0 ? '▼' : '');
+    const color = changePercent>0 ? 'green' : (changePercent<0 ? 'red' : '#000');
+
+    const card = document.createElement('div');
+    card.className = 'market-card';
+    card.innerHTML = `<div>${m.name}</div>
+                      <div style="font-weight:bold">${data && data.c ? data.c.toFixed(2) : '--'}</div>
+                      <div style="color:${color}">${direction} ${changePercent}%</div>`;
+    marketsDiv.appendChild(card);
+  }
+  container.appendChild(marketsDiv);
+}
+
+// --- News Feed Rendering ---
+async function renderFeed(tab){
+  const container = document.getElementById('feed');
+  container.innerHTML = 'Fetching...';
+  let items = [];
+
+  if(tab==='all') {
+    const allFeeds = [...feeds.news, ...feeds.culture];
+    for(const f of allFeeds){
+      const rssItems = await parseRSS(f.url);
+      rssItems.forEach(item => item.source = f.name);
+      items = items.concat(rssItems);
+    }
+    // sort most recent first
+    items.sort((a,b)=> new Date(b.pubDate) - new Date(a.pubDate));
+  } else if(tab==='news' || tab==='culture') {
+    for(const f of feeds[tab]){
+      const rssItems = await parseRSS(f.url);
+      rssItems.forEach(item => item.source = f.name);
+      items = items.concat(rssItems);
+    }
+    items.sort((a,b)=> new Date(b.pubDate) - new Date(a.pubDate));
+  }
+
+  container.innerHTML = '';
+  for(const i of items){
+    const card = document.createElement('div');
+    card.className = 'news-card';
+    card.innerHTML = `
+      <div class="source">${i.source}</div>
+      <div class="title"><a href="${i.link}" target="_blank">${i.title}</a></div>
+      ${i.thumbnail ? `<img src="${i.thumbnail}"/>` : ''}
+      <div class="description">${i.description}</div>
+    `;
+    container.appendChild(card);
+  }
+}
+
+// --- Tab Handling ---
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', async ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    activeTab = btn.dataset.tab;
+    if(activeTab==='markets'){
+      await renderMarkets();
+    } else {
+      await renderFeed(activeTab);
+    }
+  });
+});
+
+// --- Initial Load ---
+renderFeed('all');
+</script>
+</body>
+</html>
