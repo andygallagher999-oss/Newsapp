@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<style>
+  body { font-family: Arial, sans-serif; margin:0; background:#f5f5f5; }
+  h1 { text-align:center; padding:1rem; margin:0; background:#222; color:white; }
+  #buttons { display:flex; flex-wrap:wrap; justify-content:center; background:#eee; padding:.5rem; }
+  .tab-btn { margin:.2rem; padding:.5rem 1rem; border:none; border-radius:5px; cursor:pointer; background:#4285f4; color:white; font-weight:bold; }
+  .tab-btn.active { background:#2a56c6; }
+  #content { padding:1rem; }
+  .card { background:white; padding:1rem; margin:.5rem auto; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.1); max-width:600px; }
+  .card-title { font-weight:bold; font-size:1.1rem; margin-bottom:.3rem; }
+  .card-source { font-size:.8rem; color:#666; margin-bottom:.5rem; }
+  .market-card { background:#f0f8ff; padding:.8rem; margin:.5rem auto; border-radius:10px; max-width:300px; box-shadow:0 2px 4px rgba(0,0,0,0.1); }
+  .market-title { font-weight:bold; font-size:1rem; margin-bottom:.3rem; }
+  .loader { text-align:center; margin:1rem; font-style:italic; }
+</style>
+</head>
+<body>
+<h1>Global Lens</h1>
+
+<div id="market-cards" style="display:flex; flex-wrap:wrap; justify-content:center;"></div>
+
+<div id="buttons">
+  <button class="tab-btn active" data-tab="all">All</button>
+  <button class="tab-btn" data-tab="bbc">BBC</button>
+  <button class="tab-btn" data-tab="guardian">Guardian</button>
+  <button class="tab-btn" data-tab="techcrunch">TechCrunch</button>
+  <button class="tab-btn" data-tab="other">Other</button>
+  <button class="tab-btn" data-tab="markets">Markets</button>
+</div>
+
+<div id="content"><div class="loader">Loading...</div></div>
+
+<script>
+const rssApiKey = "tv1jlyo8aydiiehkz19nesknmhi2xk1gx0kaw23j";
+const feeds = {
+  bbc: [
+    "http://feeds.bbci.co.uk/news/world/rss.xml",
+    "http://feeds.bbci.co.uk/news/business/rss.xml",
+    "http://feeds.bbci.co.uk/news/technology/rss.xml",
+    "http://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+    "http://feeds.bbci.co.uk/news/health/rss.xml",
+    "http://feeds.bbci.co.uk/sport/rss.xml",
+    "http://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml"
+  ],
+  guardian: [
+    "https://www.theguardian.com/world/rss",
+    "https://www.theguardian.com/business/rss",
+    "https://www.theguardian.com/technology/rss",
+    "https://www.theguardian.com/science/rss",
+    "https://www.theguardian.com/society/health/rss",
+    "https://www.theguardian.com/sport/rss",
+    "https://www.theguardian.com/culture/rss"
+  ],
+  techcrunch: [
+    "https://feeds.feedburner.com/TechCrunch/"
+  ],
+  other: [
+    "https://www.npr.org/rss/rss.php?id=1019",
+    "https://www.billboard.com/feed/"
+  ]
+};
+
+const marketSymbols = ["^GSPC","^DJI","^IXIC","^TSX"]; // numeric market cards
+
+let allStories = [];
+let currentTab = "all";
+
+async function fetchRSS(url) {
+  try {
+    const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=${rssApiKey}&count=20`);
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    return data.items;
+  } catch (e) {
+    console.error("Failed RSS", url, e);
+    return [];
+  }
+}
+
+async function loadTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
+  document.querySelector(`.tab-btn[data-tab="${tab}"]`).classList.add("active");
+
+  const content = document.getElementById("content");
+  content.innerHTML = '<div class="loader">Loading...</div>';
+
+  let stories = [];
+  if(tab === "all") {
+    stories = allStories.slice(0,12);
+  } else if(tab === "markets") {
+    content.innerHTML = '<div class="loader">Market data appears above.</div>';
+    return;
+  } else {
+    const feedUrls = feeds[tab];
+    for(const f of feedUrls){
+      const items = await fetchRSS(f);
+      stories.push(...items);
+    }
+    stories.sort((a,b)=> new Date(b.pubDate)-new Date(a.pubDate));
+    stories = stories.slice(0,12);
+  }
+
+  content.innerHTML = "";
+  stories.forEach(item=>{
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="card-title">${item.title}</div>
+      <div class="card-source">${item.feed ? item.feed : item.source || currentTab}</div>
+      <div>${item.contentSnippet ? item.contentSnippet.substring(0,500) : ""}</div>
+      <a href="${item.link}" target="_blank">Read more</a>
+    `;
+    content.appendChild(card);
+  });
+}
+
+async function loadAllStories() {
+  allStories = [];
+  for(const key of Object.keys(feeds)){
+    for(const url of feeds[key]){
+      const items = await fetchRSS(url);
+      allStories.push(...items.map(i=>({...i, feed:key})));
+    }
+  }
+  allStories.sort((a,b)=> new Date(b.pubDate) - new Date(a.pubDate));
+}
+
+async function loadMarkets() {
+  const container = document.getElementById("market-cards");
+  container.innerHTML = "";
+  for(const s of marketSymbols){
+    try {
+      const res = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${s}`);
+      const data = await res.json();
+      if(data.quoteResponse.result.length === 0) continue;
+      const q = data.quoteResponse.result[0];
+      const card = document.createElement("div");
+      card.className = "market-card";
+      card.innerHTML = `
+        <div class="market-title">${q.shortName || s}</div>
+        <div>Price: ${q.regularMarketPrice}</div>
+        <div>Change: ${q.regularMarketChange.toFixed(2)} (${q.regularMarketChangePercent.toFixed(2)}%)</div>
+      `;
+      container.appendChild(card);
+    } catch(e){
+      console.error("Market fetch failed for", s, e);
+    }
+  }
+}
+
+// tab buttons
+document.querySelectorAll(".tab-btn").forEach(btn=>{
+  btn.addEventListener("click",()=>loadTab(btn.dataset.tab));
+});
+
+// initial load
+(async function(){
+  await loadMarkets();
+  await loadAllStories();
+  loadTab("all");
+})();
+</script>
+</body>
+</html>
