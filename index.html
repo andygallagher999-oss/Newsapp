@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Global Lens — Fixed</title>
+<style>
+  :root{--accent:#e67e22;--muted:#6b7280;--card-h:360px;--preview-h:6.5rem}
+  *{box-sizing:border-box}
+  body{font-family:Inter, Roboto, -apple-system, 'Segoe UI', Arial; margin:0;background:#f5f7fa;color:#111}
+  header{background:linear-gradient(90deg,#2b3a67,#1f2a44);color:white;padding:18px 12px;text-align:center}
+  header h1{margin:0;font-size:1.25rem}
+  .tabs{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:12px;background:#fff;border-bottom:1px solid #e6ebf2}
+  .tabs button{background:#fff;border:1px solid #d6dde6;padding:8px 12px;border-radius:10px;cursor:pointer}
+  .tabs button.active{background:var(--accent);color:#000;border-color:var(--accent);font-weight:700}
+  .category-bar{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:12px;background:#fbfbfc;border-bottom:1px solid #eef2f6}
+  .category-bar button{background:#fff;border:1px solid #e1e6eb;padding:6px 10px;border-radius:9px;cursor:pointer}
+  .category-bar button.active{background:var(--accent);color:#000;border-color:var(--accent);font-weight:700}
+
+  #loading{display:none;text-align:center;padding:18px;color:var(--muted)}
+
+  /* grid layout */
+  #content{display:grid;gap:16px;padding:18px;grid-auto-rows:1fr}
+  @media (min-width:1024px){#content{grid-template-columns:repeat(3,1fr)}}
+  @media (min-width:768px) and (max-width:1023px){#content{grid-template-columns:repeat(2,1fr)}}
+  @media (max-width:767px){#content{grid-template-columns:1fr}}
+
+  /* cards */
+  .card{background:white;border-radius:12px;box-shadow:0 6px 20px rgba(23,34,56,0.06);overflow:hidden;display:flex;flex-direction:column;height:var(--card-h)}
+  .card .media{height:160px;background:#f0f2f5;display:flex;align-items:center;justify-content:center}
+  .card .media img{width:100%;height:100%;object-fit:cover}
+  .card .body{padding:12px;display:flex;flex-direction:column;flex:1}
+  .meta{display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;align-items:center}
+  .badge{font-size:12px;padding:4px 8px;border-radius:999px;background:#eef3f8;color:#233;}
+  .source-badge{background:#122;color:#fff}
+  .title{font-weight:700;margin:0 0 8px;font-size:1rem;line-height:1.2}
+  .summary{font-size:0.92rem;color:var(--muted);line-height:1.35;overflow:hidden;max-height:var(--preview-h)}
+  .summary.expanded{max-height:1000px}
+  .actions{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
+  .btn{background:var(--accent);border:none;padding:8px 10px;border-radius:8px;color:#000;font-weight:700;cursor:pointer}
+  .link{background:none;border:1px solid #e6ebf2;padding:8px 10px;border-radius:8px;cursor:pointer;text-decoration:none;color:inherit}
+
+  /* markets top row */
+  .markets-top{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;padding:12px}
+  .markets-top .mcard{background:#fff;border-radius:10px;padding:10px;width:160px;text-align:center;box-shadow:0 4px 12px rgba(15,30,60,0.06)}
+
+  /* back to top */
+  #backToTop{position:fixed;right:18px;bottom:18px;width:48px;height:48px;border-radius:50%;background:var(--accent);border:none;color:#000;font-weight:800;cursor:pointer;display:none}
+
+  .sectionHeader{grid-column:1/-1;padding:6px 4px;font-weight:700;color:#334;}
+  .error{padding:12px;background:#ffecec;border-radius:8px;color:#900}
+</style>
+</head>
+<body>
+<header><h1>Global Lens</h1></header>
+
+<!-- Tabs and categories inserted via JS -->
+<div class="tabs" id="tabs"></div>
+<div class="category-bar" id="categories"></div>
+
+<div id="loading">Loading…</div>
+<div id="content"></div>
+
+<button id="backToTop" title="Back to top">↑</button>
+
+<script>
+/* ====== CONFIG ====== */
+const RSS2JSON_KEY = 'tv1jlyo8aydiiehkz19nesknmhi2xk1gx0kaw23j';
+const FINNHUB_KEY = 'd32q9dhr01qtm6316bk0d32q9dhr01qtm6316bkg';
+const PAGE_SIZE = 12;
+
+/* Sources */
+const SOURCE_MAP = {
+  'All': [],
+  'The Guardian': [
+    'https://www.theguardian.com/world/rss',
+    'https://www.theguardian.com/business/rss',
+    'https://www.theguardian.com/technology/rss',
+    'https://www.theguardian.com/science/rss',
+    'https://www.theguardian.com/sport/rss',
+    'https://www.theguardian.com/culture/rss'
+  ],
+  'BBC': [
+    'https://feeds.bbci.co.uk/news/world/rss.xml',
+    'https://feeds.bbci.co.uk/news/business/rss.xml',
+    'https://feeds.bbci.co.uk/news/technology/rss.xml',
+    'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml',
+    'https://feeds.bbci.co.uk/news/health/rss.xml',
+    'https://feeds.bbci.co.uk/sport/rss.xml',
+    'https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml'
+  ],
+  'NPR': ['https://www.npr.org/rss/rss.php?id=1019'],
+  'Billboard': ['https://www.billboard.com/feed/'],
+  'TechCrunch': ['https://feeds.feedburner.com/TechCrunch/'],
+  'CNBC': ['https://www.cnbc.com/id/100003114/device/rss/rss.html'],
+  'Bloomberg': ['https://feeds.bloomberg.com/markets/news.rss'],
+  'Markets': []
+};
+
+/* categories the UI offers */
+const CATEGORIES = ['All','World','Business','Technology','Science','Health','Sports','Culture'];
+
+/* indices to display on Markets top row */
+const INDEX_SYMBOLS = ['^GSPC','^DJI','^IXIC','^GSPTSE'];
+
+/* ====== STATE ====== */
+let activeSource = 'All';
+let activeCategory = 'All';
+let articlesStore = {}; // { sourceName: [normalized items] }
+let pageIndex = {};     // key = `${source}|${category}` => integer pages loaded
+let fetching = false;
+
+/* ====== DOM refs ====== */
+const tabsNode = document.getElementById('tabs');
+const categoriesNode = document.getElementById('categories');
+const contentNode = document.getElementById('content');
+const loadingNode = document.getElementById('loading');
+const backBtn = document.getElementById('backToTop');
+
+/* ====== Helpers ====== */
+function stripHtml(html){ if(!html) return ''; return html.replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim(); }
+
+function extractImage(item){
+  if(item.thumbnail) return item.thumbnail;
+  if(item.enclosure && item.enclosure.link) return item.enclosure.link;
+  if(item.image) return item.image;
+  const content = item.content || item.description || '';
+  const m = content.match(/<img[^>]+src=["']([^"']+)["']/i);
+  if(m) return m[1];
+  // fallback placeholder
+  return 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=1200&auto=format&fit=crop&s=placeholder';
+}
+
+function normalize(item, sourceName){
+  const id = item.guid || item.link || Math.random().toString(36).slice(2);
+  const title = item.title || '(no title)';
+  const link = item.link || '#';
+  const pubDate = item.pubDate ? new Date(item.pubDate) : new Date();
+  const categories = item.categories || [];
+  const content = item.content || item.description || '';
+  const summary = stripHtml(content).slice(0,500);
+  const image = extractImage(item);
+  return { id, title, link, pubDate, categories, content, summary, image, source: sourceName };
+}
+
+/* fetch a feed via rss2json */
+async function fetchRssItems(url){
+  try {
+    const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=${RSS2JSON_KEY}&count=50`);
+    const data = await res.json();
+    if(data.status === 'ok') return data.items || [];
+    console.warn('rss2json non-ok', url, data);
+    return [];
+  } catch(e){
+    console.error('Failed to fetch RSS', url, e);
+    return [];
+  }
+}
+
+/* Warm up all sources into articlesStore (normalize) */
+async function warmupFeeds(){
+  loadingNode.style.display = 'block';
+  const sourceNames = Object.keys(SOURCE_MAP).filter(s => s !== 'All' && s !== 'Markets');
+
+  await Promise.all(sourceNames.map(async sourceName => {
+    const feedUrls = SOURCE_MAP[sourceName];
+    let all = [];
+    await Promise.all(feedUrls.map(async url => {
+      const items = await fetchRssItems(url);
+      all = all.concat(items);
+    }));
+    articlesStore[sourceName] = all.map(it => normalize(it, sourceName));
+  }));
+
+  // merged All feed
+  const merged = Object.keys(articlesStore).flatMap(k => articlesStore[k]).sort((a,b) => b.pubDate - a.pubDate);
+  articlesStore['All'] = merged;
+
+  // Finnhub news for Markets tab
+  try {
+    const res = await fetch(`https://finnhub.io/api/v1/news?category=general&token=${FINNHUB_KEY}`);
+    const json = await res.json();
+    if(Array.isArray(json)){
+      articlesStore['Markets'] = json.map(n => ({
+        id: n.id || n.url,
+        title: n.headline || n.summary || '(no title)',
+        link: n.url,
+        pubDate: n.datetime ? new Date(n.datetime * 1000) : new Date(),
+        categories: [],
+        content: n.summary || '',
+        summary: (n.summary || '').slice(0,500),
+        image: n.image || '',
+        source: 'Finnhub'
+      }));
+    } else {
+      articlesStore['Markets'] = [];
+    }
+  } catch(e){ console.warn('Finnhub news error', e); articlesStore['Markets'] = []; }
+
+  // initialize page indices
+  for(const s of Object.keys(SOURCE_MAP)){
+    for(const c of CATEGORIES){
+      pageIndex[`${s}|${c}`] = 0;
+    }
+  }
+
+  loadingNode.style.display = 'none';
+}
+
+/* get filtered list for current source/category */
+function getFiltered(source, category){
+  let list = source === 'All' ? articlesStore['All'] || [] : articlesStore[source] || [];
+  if(category && category !== 'All'){
+    const catLower = category.toLowerCase();
+    list = list.filter(item =>
+      (item.categories && item.categories.some(c => c.toLowerCase().includes(catLower))) ||
+      item.title.toLowerCase().includes(catLower) ||
+      item.content.toLowerCase().includes(catLower)
+    );
+  }
+  return list;
+}
+
+/* render one page (slice) of articles */
+function renderSlice(arr, append=false){
+  if(!append) contentNode.innerHTML = '';
+  if(arr.length === 0 && !append){
+    contentNode.innerHTML = '<div class="sectionHeader">No articles found.</div>';
+    return;
+  }
+  for(const a of arr){
+    const card = document.createElement('article'); card.className = 'card';
+
+    const media = document.createElement('div'); media.className = 'media';
+    const img = document.createElement('img'); img.src = a.image; img.alt = ''; img.onerror = () => { img.style.display = 'none'; };
+    media.appendChild(img);
+    card.appendChild(media);
+
+    const body = document.createElement('div'); body.className = 'body';
+
+    const meta = document.createElement('div'); meta.className = 'meta';
+    const srcBadge = document.createElement('div'); srcBadge.className = 'badge source-badge'; srcBadge.textContent = a.source || '';
+    const dateBadge = document.createElement('div'); dateBadge.className = 'badge'; dateBadge.textContent = a.pubDate.toLocaleString();
+    meta.appendChild(srcBadge); meta.appendChild(dateBadge);
+
+    const title = document.createElement('div'); title.className = 'title'; title.innerHTML = a.title;
+
+    const summary = document.createElement('div'); summary.className = 'summary'; summary.textContent = a.summary || stripHtml(a.content || '');
+    // collapsed by default (max-height enforced by CSS), expanded toggled via class
+
+    const actions = document.createElement('div'); actions.className = 'actions';
+    const readBtn = document.createElement('button'); readBtn.className = 'btn'; readBtn.textContent = 'Read more';
+    const openA = document.createElement('a'); openA.className = 'link'; openA.textContent = 'Open'; openA.href = a.link; openA.target = '_blank';
+    let expanded = false;
+    readBtn.onclick = (ev) => {
+      ev.stopPropagation();
+      expanded = !expanded;
+      if(expanded){ summary.classList.add('expanded'); readBtn.textContent = 'Collapse'; } else { summary.classList.remove('expanded'); readBtn.textContent = 'Read more'; }
+    };
+
+    actions.appendChild(readBtn); actions.appendChild(openA);
+
+    body.appendChild(meta); body.appendChild(title); body.appendChild(summary); body.appendChild(actions);
+    card.appendChild(body);
+
+    contentNode.appendChild(card);
+  }
+}
+
+/* load next page for current view */
+async function loadMore(){
+  if(fetching) return;
+  fetching = true;
+  loadingNode.style.display = 'block';
+
+  const key = `${activeSource}|${activeCategory || 'All'}`;
+  const currentPage = pageIndex[key] || 0;
+  const all = getFiltered(activeSource, activeCategory || 'All');
+  const start = currentPage * PAGE_SIZE;
+  const slice = all.slice(start, start + PAGE_SIZE);
+
+  // If on Markets tab, ensure the markets top row is present before articles
+  if(activeSource === 'Markets' && currentPage === 0){
+    // remove any previous markets-top
+    const prevTop = document.querySelector('.markets-top');
+    if(prevTop) prevTop.remove();
+    const top = document.createElement('div'); top.className = 'markets-top';
+    // fetch indices
+    for(const symbol of INDEX_SYMBOLS){
+      let appended = false;
+      try{
+        const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(symbol)}&token=${FINNHUB_KEY}`);
+        const q = await r.json();
+        if(q && typeof q.c === 'number' && q.c > 0){
+          const m = document.createElement('div'); m.className = 'mcard'; m.innerHTML = `<div style="font-weight:700">${symbol}</div><div>${Number(q.c).toFixed(2)}</div><div style="color:${q.d>0?'green':'red'}">${Number(q.d).toFixed(2)} (${Number(q.dp).toFixed(2)}%)</div>`;
+          top.appendChild(m); appended = true;
+        }
+      }catch(e){ console.warn('Finnhub index failed for',symbol,e); }
+      if(!appended){
+        // Yahoo fallback
+        try{
+          const y = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbol)}`);
+          const jd = await y.json();
+          const q = jd.quoteResponse.result[0];
+          if(q){
+            const m = document.createElement('div'); m.className = 'mcard'; m.innerHTML = `<div style="font-weight:700">${q.shortName||symbol}</div><div>${q.regularMarketPrice}</div><div style="color:${q.regularMarketChange>0?'green':'red'}">${Number(q.regularMarketChange).toFixed(2)} (${Number(q.regularMarketChangePercent).toFixed(2)}%)</div>`;
+            top.appendChild(m);
+          }
+        }catch(e){ console.warn('Yahoo fallback failed for',symbol,e); }
+      }
+    }
+    document.body.insertBefore(top, contentNode); // insert before main content area
+  }
+
+  renderSlice(slice, currentPage > 0);
+  pageIndex[key] = currentPage + 1;
+
+  fetching = false;
+  loadingNode.style.display = 'none';
+}
+
+/* UI wiring: create tabs & categories, attach events */
+function setupUI(){
+  // tabs
+  tabsNode.innerHTML = '';
+  for(const key of Object.keys(SOURCE_MAP)){
+    const btn = document.createElement('button'); btn.textContent = key;
+    if(key === activeSource) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      // clear previous market-top if any
+      const prevTop = document.querySelector('.markets-top'); if(prevTop) prevTop.remove();
+      activeSource = key;
+      // reset page index for this view
+      for(const c of CATEGORIES) pageIndex[`${activeSource}|${c}`] = 0;
+      // mark active
+      document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b === btn));
+      // load first page
+      contentNode.innerHTML = '';
+      loadMore();
+    });
+    tabsNode.appendChild(btn);
+  }
+
+  // categories
+  categoriesNode.innerHTML = '';
+  for(const c of CATEGORIES){
+    const cb = document.createElement('button'); cb.textContent = c;
+    if(c === activeCategory) cb.classList.add('active');
+    cb.addEventListener('click', () => {
+      activeCategory = c;
+      // reset page indices for all sources with this category
+      for(const s of Object.keys(SOURCE_MAP)) pageIndex[`${s}|${activeCategory}`] = 0;
+      // mark active
+      document.querySelectorAll('.category-bar button').forEach(b => b.classList.toggle('active', b === cb));
+      // remove markets-top when category changes (it will be re-rendered if Markets)
+      const prevTop = document.querySelector('.markets-top'); if(prevTop) prevTop.remove();
+      contentNode.innerHTML = '';
+      loadMore();
+    });
+    categoriesNode.appendChild(cb);
+  }
+
+  // back to top & infinite scroll trigger
+  backBtn.addEventListener('click', ()=> window.scrollTo({top:0,behavior:'smooth'}));
+  window.addEventListener('scroll', () => {
+    backBtn.style.display = window.scrollY > 300 ? 'block' : 'none';
+    if(window.innerHeight + window.scrollY >= document.body.offsetHeight - 800){
+      loadMore();
+    }
+  });
+}
+
+/* boot */
+(async function boot(){
+  // init UI placeholders while warmup runs
+  setupUI();
+  await warmupFeeds();
+  // initial load
+  loadMore();
+})();
+
+</script>
+</body>
+</html>
