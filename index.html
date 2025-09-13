@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<style>
+  body { font-family: Arial, sans-serif; margin:0; background:#f5f5f5; }
+  header { text-align:center; padding:1rem; background:#222; color:white; }
+  .tabs, .categories { display:flex; flex-wrap: wrap; justify-content:center; margin:1rem 0; }
+  .tabs button, .categories button { margin:0.25rem; padding:0.5rem 1rem; border:none; border-radius:6px; background:#444; color:white; cursor:pointer; }
+  .tabs button.active, .categories button.active { background:#ff9800; }
+  .card-container { display:grid; gap:1rem; padding:1rem; justify-items:center; }
+  .story-card, .market-card { background:white; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,0.1); overflow:hidden; width:100%; max-width:400px; }
+  .story-card img { width:100%; height:auto; display:block; }
+  .story-content, .market-content { padding:0.75rem 1rem; }
+  .story-title { font-weight:bold; margin-bottom:0.5rem; }
+  .story-summary { margin-bottom:0.5rem; font-size:0.9rem; }
+  .story-source { font-size:0.8rem; color:#555; text-align:right; }
+  .market-card { max-width:200px; text-align:center; }
+  @media(min-width: 768px) { .card-container { grid-template-columns: repeat(2, 1fr); } }
+  @media(min-width: 1024px) { .card-container { grid-template-columns: repeat(3, 1fr); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Global Lens</h1>
+</header>
+
+<div class="tabs" id="source-tabs">
+  <button class="active" data-source="all">All</button>
+  <button data-source="bbc">BBC</button>
+  <button data-source="guardian">The Guardian</button>
+  <button data-source="npr">NPR</button>
+  <button data-source="billboard">Billboard</button>
+  <button data-source="crunch">TechCrunch</button>
+  <button data-source="cnbc">CNBC</button>
+  <button data-source="bloomberg">Bloomberg</button>
+  <button data-source="markets">Markets</button>
+</div>
+
+<div class="categories" id="category-tabs">
+  <button class="active" data-category="all">All</button>
+  <button data-category="world">World</button>
+  <button data-category="sports">Sports</button>
+  <button data-category="culture">Culture</button>
+  <button data-category="business">Business</button>
+  <button data-category="tech">Tech</button>
+</div>
+
+<div class="card-container" id="content"></div>
+
+<script>
+const rssApiKey = "tv1jlyo8aydiiehkz19nesknmhi2xk1gx0kaw23j";
+const finnhubKey = "d32q9dhr01qtm6316bk0d32q9dhr01qtm6316bkg";
+
+// Feed URLs
+const feeds = {
+  bbc: [
+    {url:"http://feeds.bbci.co.uk/news/world/rss.xml", category:"world"},
+    {url:"http://feeds.bbci.co.uk/news/business/rss.xml", category:"business"},
+    {url:"http://feeds.bbci.co.uk/news/technology/rss.xml", category:"tech"},
+    {url:"http://feeds.bbci.co.uk/news/sport/rss.xml", category:"sports"},
+    {url:"http://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml", category:"culture"}
+  ],
+  guardian: [
+    {url:"https://www.theguardian.com/world/rss", category:"world"},
+    {url:"https://www.theguardian.com/business/rss", category:"business"},
+    {url:"https://www.theguardian.com/technology/rss", category:"tech"},
+    {url:"https://www.theguardian.com/sport/rss", category:"sports"},
+    {url:"https://www.theguardian.com/culture/rss", category:"culture"}
+  ],
+  npr: [{url:"https://www.npr.org/rss/rss.php?id=1019", category:"culture"}],
+  billboard: [{url:"https://www.billboard.com/feed/", category:"culture"}],
+  crunch: [{url:"https://feeds.feedburner.com/TechCrunch/", category:"tech"}],
+  cnbc: [{url:"https://www.cnbc.com/id/100003114/device/rss/rss.html", category:"business"}],
+  bloomberg: [{url:"https://feeds.bloomberg.com/markets/news.rss", category:"business"}]
+};
+
+const marketSymbols = ["^GSPC","^DJI","^IXIC","^TSX"];
+let activeSource = "all";
+let activeCategory = "all";
+
+// Event listeners
+document.querySelectorAll("#source-tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#source-tabs button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    activeSource = btn.dataset.source;
+    loadContent();
+  });
+});
+
+document.querySelectorAll("#category-tabs button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#category-tabs button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    activeCategory = btn.dataset.category;
+    loadContent();
+  });
+});
+
+// Load RSS feed
+async function fetchRSS(url) {
+  try {
+    const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=${rssApiKey}&count=20`);
+    const data = await res.json();
+    return data.items || [];
+  } catch(e){ console.error("RSS fetch error", url, e); return []; }
+}
+
+// Load Finnhub market data
+async function fetchMarkets() {
+  try {
+    const cards = [];
+    for(const symbol of marketSymbols){
+      const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${finnhubKey}`);
+      const data = await res.json();
+      cards.push({symbol, price:data.c, change:data.d, percent:data.dp});
+    }
+    return cards;
+  } catch(e){ console.error("Market fetch error", e); return []; }
+}
+
+// Main content loader
+async function loadContent() {
+  const container = document.getElementById("content");
+  container.innerHTML = "";
+  
+  if(activeSource === "markets") {
+    const markets = await fetchMarkets();
+    markets.forEach(m => {
+      const card = document.createElement("div");
+      card.className = "market-card";
+      card.innerHTML = `
+        <div class="market-content">
+          <div class="name">${m.symbol}</div>
+          <div>Price: ${m.price}</div>
+          <div>Change: ${m.change} (${m.percent}%)</div>
+        </div>`;
+      container.appendChild(card);
+    });
+    return;
+  }
+
+  // Gather feeds
+  let items = [];
+  const sourcesToFetch = activeSource==="all" ? Object.keys(feeds) : [activeSource];
+  for(const src of sourcesToFetch){
+    for(const feed of feeds[src]){
+      if(activeCategory==="all" || feed.category===activeCategory){
+        const rssItems = await fetchRSS(feed.url);
+        rssItems.forEach(i=>i.source=src);
+        items.push(...rssItems);
+      }
+    }
+  }
+
+  // Sort by date descending
+  items.sort((a,b)=> new Date(b.pubDate)-new Date(a.pubDate));
+  
+  // Render
+  items.forEach(item => {
+    const card = document.createElement("div");
+    card.className = "story-card";
+    card.innerHTML = `
+      ${item.thumbnail ? `<img src="${item.thumbnail}" alt="">` : ""}
+      <div class="story-content">
+        <div class="story-title">${item.title}</div>
+        <div class="story-summary">${item.description}</div>
+        <div class="story-source">${item.source}</div>
+      </div>`;
+    container.appendChild(card);
+  });
+}
+
+// Initial load
+loadContent();
+</script>
+</body>
+</html>
