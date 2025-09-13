@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<style>
+  body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f5f5f5; }
+  h1 { text-align:center; padding:1rem; }
+  .tab-buttons, .category-buttons { display:flex; flex-wrap:wrap; justify-content:center; gap:0.5rem; padding:0.5rem; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,0.1); }
+  .tab-buttons button, .category-buttons button { padding:0.5rem 1rem; border:none; border-radius:8px; background:#007bff; color:#fff; cursor:pointer; }
+  .tab-buttons button.active, .category-buttons button.active { background:#0056b3; }
+  .tab-content { display:none; padding:1rem; max-width:800px; margin:auto; }
+  .news-card, .market-card { background:white; border-radius:12px; margin-bottom:1rem; padding:1rem; box-shadow:0 2px 6px rgba(0,0,0,0.1); display:flex; gap:1rem; }
+  .news-card img { width:120px; height:80px; object-fit:cover; border-radius:8px; }
+  .news-content { flex:1; }
+  .news-title { font-weight:bold; margin-bottom:0.5rem; }
+  .news-desc { font-size:0.9rem; color:#333; margin-bottom:0.5rem; }
+  .news-source { font-size:0.8rem; color:#666; }
+  .market-card { flex-direction:column; text-align:center; max-width:180px; margin:auto; }
+  #loading { text-align:center; padding:1rem; font-weight:bold; }
+</style>
+</head>
+<body>
+
+<h1>Global Lens</h1>
+
+<div class="tab-buttons">
+  <button onclick="showTab('all')" class="active">All</button>
+  <button onclick="showTab('guardian')">The Guardian</button>
+  <button onclick="showTab('billboard')">Billboard</button>
+  <button onclick="showTab('npr')">NPR</button>
+  <button onclick="showTab('crunch')">Crunch</button>
+  <button onclick="showTab('bbc')">BBC</button>
+  <button onclick="showTab('cnbc')">CNBC</button>
+  <button onclick="showTab('bloomberg')">Bloomberg</button>
+  <button onclick="showTab('markets')">Markets</button>
+</div>
+
+<div id="all" class="tab-content"></div>
+<div id="guardian" class="tab-content"></div>
+<div id="billboard" class="tab-content"></div>
+<div id="npr" class="tab-content"></div>
+<div id="crunch" class="tab-content"></div>
+<div id="bbc" class="tab-content"></div>
+<div id="cnbc" class="tab-content"></div>
+<div id="bloomberg" class="tab-content"></div>
+<div id="markets" class="tab-content"></div>
+
+<div id="loading">Fetching articles...</div>
+
+<script>
+const apiKey = 'tv1jlyo8aydiiehkz19nesknmhi2xk1gx0kaw23j'; // RSS2JSON API key
+let currentTab = 'all';
+const feedUrls = {
+  guardian: 'https://www.theguardian.com/world/rss',
+  billboard: 'https://www.billboard.com/feed/',
+  npr: 'https://www.npr.org/rss/rss.php?id=1019',
+  crunch: 'https://feeds.feedburner.com/TechCrunch/',
+  bbc: 'http://feeds.bbci.co.uk/news/world/rss.xml',
+  cnbc: 'https://www.cnbc.com/id/100003114/device/rss/rss.html',
+  bloomberg: 'https://feeds.bloomberg.com/markets/news.rss'
+};
+
+// Market symbols and cards
+const marketSymbols = ["^GSPC","^DJI","^IXIC","^TSX"];
+async function loadMarkets() {
+  const container = document.getElementById('markets');
+  container.innerHTML = '';
+  for(const s of marketSymbols){
+    try {
+      const res = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${s}`);
+      const data = await res.json();
+      const q = data.quoteResponse.result[0];
+      const card = document.createElement('div');
+      card.className = 'market-card';
+      card.innerHTML = `<div>${q.shortName || s}</div>
+                        <div>Price: ${q.regularMarketPrice}</div>
+                        <div>Change: ${q.regularMarketChange.toFixed(2)} (${q.regularMarketChangePercent.toFixed(2)}%)</div>`;
+      container.appendChild(card);
+    } catch(e){ console.error(e); }
+  }
+}
+
+// Show/hide tabs
+function showTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-content').forEach(c=>c.style.display='none');
+  document.getElementById(tab).style.display='block';
+  document.querySelectorAll('.tab-buttons button').forEach(b=>b.classList.remove('active'));
+  document.querySelector(`.tab-buttons button[onclick="showTab('${tab}')"]`).classList.add('active');
+  if(tab==='markets'){ loadMarkets(); }
+  else { loadFeed(tab); }
+}
+
+// Load RSS feed into a tab
+async function loadFeed(tab){
+  if(!feedUrls[tab] && tab!=='all') return;
+  const container = document.getElementById(tab);
+  container.innerHTML = '';
+  const urls = tab==='all' ? Object.values(feedUrls) : [feedUrls[tab]];
+  for(const url of urls){
+    try {
+      const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=${apiKey}&count=12`);
+      const data = await res.json();
+      if(data.status==='ok'){
+        data.items.forEach(item=>{
+          const card = document.createElement('div');
+          card.className = 'news-card';
+          card.innerHTML = `<img src="${item.enclosure?.link || item.thumbnail || ''}" onerror="this.style.display='none'"/>
+                            <div class="news-content">
+                              <div class="news-title">${item.title}</div>
+                              <div class="news-desc">${item.description}</div>
+                              <div class="news-source">${item.source || url}</div>
+                            </div>`;
+          container.appendChild(card);
+        });
+      }
+    } catch(e){ console.error('Failed RSS', url, e); }
+  }
+}
+
+showTab('all');
+</script>
+
+</body>
+</html>
