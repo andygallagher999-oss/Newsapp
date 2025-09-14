@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Global Lens</title>
+<style>
+body {font-family:Arial,sans-serif;margin:0;padding:0;background:#f5f5f5;}
+header {text-align:center;padding:1rem;background:#2c3e50;color:white;font-size:1.5rem;}
+.tab-bar {display:flex;flex-wrap:wrap;justify-content:center;background:#34495e;padding:0.5rem;}
+.tab-bar button {margin:0.2rem;padding:0.5rem 1rem;border:none;border-radius:5px;background:#ecf0f1;cursor:pointer;}
+.tab-bar button.active {background:#e67e22;color:white;}
+.category-bar {display:flex;flex-wrap:wrap;justify-content:center;padding:0.5rem;background:#bdc3c7;}
+.category-bar button {margin:0.2rem;padding:0.3rem 0.7rem;border:none;border-radius:5px;background:#ecf0f1;cursor:pointer;}
+.category-bar button.active {background:#e74c3c;color:white;}
+#content {display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;padding:1rem;justify-content:flex-start;}
+.card {background:white;border-radius:10px;padding:1rem;box-shadow:0 2px 6px rgba(0,0,0,0.1);display:flex;flex-direction:column;height:360px;overflow:hidden;position:relative;}
+.card img {width:100%;border-radius:5px;margin-bottom:0.5rem;object-fit:cover;height:120px;}
+.card .title {font-weight:bold;margin-bottom:0.5rem;}
+.card .source {font-size:0.8rem;color:#7f8c8d;margin-bottom:0.5rem;}
+.card .date {font-size:0.8rem;color:#999;margin-bottom:0.5rem;}
+.card .summary {margin-bottom:0.5rem;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;}
+.card.expanded .summary {-webkit-line-clamp:unset;}
+.card .actions {display:flex;justify-content:space-between;align-items:center;margin-top:auto;}
+.card button.read-more {background:none;border:none;color:#e67e22;cursor:pointer;}
+#backToTop {position:fixed;bottom:20px;right:20px;background:#e67e22;color:white;border:none;border-radius:50%;width:50px;height:50px;font-size:1.5rem;cursor:pointer;display:none;}
+.card .summary table {width:100%;border-collapse:collapse;display:block;max-height:120px;overflow:auto;}
+.card .summary table th, .card .summary table td {border:1px solid #ccc;padding:4px;text-align:center;font-size:0.85rem;}
+.card .summary table th {background:#f0f0f0;}
+@media(max-width:768px){.card img{height:100px;}.card .summary table{max-height:150px;}}
+</style>
+</head>
+<body>
+<header>Global Lens</header>
+<div class="tab-bar" id="sourceTabs"></div>
+<div class="category-bar" id="categoryTabs"></div>
+<div id="content"></div>
+<button id="backToTop">↑</button>
+
+<script>
+/* ========== CONFIG ========== */
+const RSS2JSON_API = 'tv1jlyo8aydiiehkz19nesknmhi2xk1gx0kaw23j';
+const FINNHUB_API = 'd32q9dhr01qtm6316bk0d32q9dhr01qtm6316bkg';
+const PLACEHOLDER_LOGO = 'https://raw.githubusercontent.com/andygallagher999-oss/Newsapp/main/assets/images/global-lens-logo.png';
+
+/* Categories */
+const categories = ['World','Business','Technology','Science','Health','Sports','Culture'];
+
+/* Sources with per-feed category mapping (keeps categories populated) */
+const sources = {
+  'All': [],
+  'Global': [
+    { url: 'https://globalnews.ca/feed/', category: 'World' },
+    { url: 'https://globalnews.ca/entertainment/feed/', category: 'Culture' },
+    { url: 'https://globalnews.ca/sports/feed/', category: 'Sports' }
+  ],
+  'BBC': [
+    { url: 'https://feeds.bbci.co.uk/news/world/rss.xml', category: 'World' },
+    { url: 'https://feeds.bbci.co.uk/news/business/rss.xml', category: 'Business' },
+    { url: 'https://feeds.bbci.co.uk/news/technology/rss.xml', category: 'Technology' }
+  ],
+  'NPR': [
+    { url: 'https://www.npr.org/rss/rss.php?id=1001', category: 'World' },
+    { url: 'https://www.npr.org/rss/rss.php?id=1004', category: 'Business' },
+    { url: 'https://www.npr.org/rss/rss.php?id=1019', category: 'Science' }
+  ],
+  'Billboard': [{ url: 'https://www.billboard.com/feed/', category: 'Culture' }],
+  'Crunch': [{ url: 'https://techcrunch.com/feed/', category: 'Technology' }],
+  'CNBC': [{ url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', category: 'Business' }],
+  'Bloomberg': [{ url: 'https://feeds.bloomberg.com/markets/news.rss', category: 'Business' }],
+  'Markets': []
+};
+
+/* App state */
+let activeSource = 'All';
+let activeCategory = '';
+let allArticles = {}; // keyed by source name
+
+/* ========== UI BUILD ========== */
+const sourceTabs = document.getElementById('sourceTabs');
+for (const s in sources) {
+  // keep sources row as-is (no Culture source)
+  const btn = document.createElement('button');
+  btn.textContent = s;
+  btn.onclick = () => { activeSource = s; activeCategory = ''; render(); fetchMarketsIfNeeded(); };
+  if (s === 'All') btn.classList.add('active');
+  sourceTabs.appendChild(btn);
+}
+
+const categoryTabs = document.getElementById('categoryTabs');
+categories.forEach(cat => {
+  const btn = document.createElement('button');
+  btn.textContent = cat;
+  btn.onclick = () => { activeCategory = activeCategory === cat ? '' : cat; render(); };
+  categoryTabs.appendChild(btn);
+});
+
+const backToTop = document.getElementById('backToTop');
+backToTop.onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+window.onscroll = () => { backToTop.style.display = window.scrollY > 300 ? 'block' : 'none'; };
+
+/* ========== Helpers ========== */
+
+// Robust pubDate normalization -> returns milliseconds since epoch (Number)
+function normalizePubDate(pub) {
+  if (pub === undefined || pub === null) return Date.now();
+
+  // If it's already a number
+  if (typeof pub === 'number') {
+    return pub < 1e12 ? pub * 1000 : pub;
+  }
+
+  // If it's a numeric string (seconds or ms)
+  if (typeof pub === 'string') {
+    const s = pub.trim();
+
+    // pure digits
+    if (/^\d+$/.test(s)) {
+      const n = parseInt(s, 10);
+      return n < 1e12 ? n * 1000 : n;
+    }
+
+    // Try Date.parse for RFC/ISO strings
+    const parsed = Date.parse(s);
+    if (!isNaN(parsed)) return parsed;
+
+    // fallback: try to pull a unix-like number in the string
+    const match = s.match(/(\d{10,13})/);
+    if (match) {
+      const n = parseInt(match[0], 10);
+      return n < 1e12 ? n * 1000 : n;
+    }
+
+    // Last resort
+    return Date.now();
+  }
+
+  // Unexpected type
+  return Date.now();
+}
+
+// Improved image extraction + feed-specific fallback logos
+function getArticleImage(a) {
+  let imgUrl = PLACEHOLDER_LOGO;
+
+  try {
+    // 1. standard enclosure
+    if (a.enclosure && a.enclosure.link) {
+      imgUrl = a.enclosure.link;
+    }
+    // 2. rss2json sometimes returns a.media object
+    else if (a.media && a.media.content && a.media.content.url) {
+      imgUrl = a.media.content.url;
+    } else if (a.media && a.media.thumbnail && a.media.thumbnail.url) {
+      imgUrl = a.media.thumbnail.url;
+    }
+    // 3. thumbnail
+    else if (a.thumbnail) {
+      imgUrl = a.thumbnail;
+    }
+    // 4. parse <img> from description/content
+    else {
+      const temp = document.createElement('div');
+      temp.innerHTML = a.description || a.content || '';
+      const tag = temp.querySelector('img');
+      if (tag && tag.src) imgUrl = tag.src;
+    }
+  } catch (e) {
+    // ignore and fall through to fallback logos
+  }
+
+  // 5. feed-specific fallback logos if still placeholder
+  if (!imgUrl || imgUrl === PLACEHOLDER_LOGO) {
+    const src = (a.source || '').toLowerCase();
+    if (src.includes('billboard')) {
+      imgUrl = 'https://upload.wikimedia.org/wikipedia/commons/3/30/Billboard_logo.png';
+    } else if (src.includes('techcrunch') || src.includes('crunch')) {
+      imgUrl = 'https://techcrunch.com/wp-content/uploads/2018/03/cropped-tc-favicon.png';
+    } else if (src.includes('cnbc')) {
+      imgUrl = 'https://www.cnbc.com/favicon.ico';
+    }
+  }
+
+  return imgUrl;
+}
+
+/* ========== RSS Fetching ========== */
+
+async function fetchRSS(feed) {
+  try {
+    const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feed.url)}&api_key=${RSS2JSON_API}&count=30`);
+    const data = await res.json();
+    // tag each item with the feed category (ensures category tabs populate)
+    return data.items.map(i => {
+      return {
+        ...i,
+        source: data.feed.title || feed.url,
+        category: feed.category || (i.categories && i.categories[0]) || ''
+      };
+    });
+  } catch (err) {
+    console.error('RSS Error', feed.url, err);
+    return [];
+  }
+}
+
+/* ========== Market data ========== */
+
+async function fetchMarketsIfNeeded() {
+  if (allArticles.Markets && allArticles.Markets.length) return;
+
+  const symbols = [
+    { s: '^GSPC', name: 'S&P 500' },
+    { s: '^DJI', name: 'Dow Jones' },
+    { s: '^IXIC', name: 'Nasdaq' },
+    { s: '^GSPTSE', name: 'TSX' }
+  ];
+
+  let tableHTML = '<table><tr><th>Index</th><th>Price</th><th>Change</th><th>%Change</th></tr>';
+  for (const sym of symbols) {
+    try {
+      const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym.s)}&token=${FINNHUB_API}`);
+      const d = await r.json();
+      const price = (d.c || d.pc || 'N/A');
+      const change = (d.d !== undefined ? d.d.toFixed(2) : 'N/A');
+      const pct = (d.dp !== undefined ? d.dp.toFixed(2) : 'N/A');
+      tableHTML += `<tr><td>${sym.name}</td><td>${price}</td><td>${change}</td><td>${pct}</td></tr>`;
+    } catch (e) {
+      tableHTML += `<tr><td>${sym.name}</td><td colspan="3">Market data not available</td></tr>`;
+    }
+  }
+  tableHTML += '</table>';
+
+  const cards = [{
+    title: 'Market Indices',
+    link: '#',
+    pubDate: Date.now(),
+    description: tableHTML,
+    enclosure: { link: PLACEHOLDER_LOGO },
+    source: 'Markets'
+  }];
+
+  try {
+    const res = await fetch(`https://finnhub.io/api/v1/news?category=general&token=${FINNHUB_API}`);
+    const data = await res.json();
+    (data || []).forEach(d => {
+      cards.push({
+        title: d.headline,
+        link: d.url,
+        pubDate: d.datetime * 1000,
+        description: d.summary,
+        enclosure: { link: d.image || PLACEHOLDER_LOGO },
+        source: 'Finnhub'
+      });
+    });
+  } catch (e) {
+    console.error('Finnhub news error', e);
+  }
+
+  allArticles.Markets = cards;
+}
+
+/* ========== Fetch all feeds ========== */
+
+async function fetchAll() {
+  for (const src in sources) {
+    allArticles[src] = [];
+    for (const feed of sources[src]) {
+      const items = await fetchRSS(feed);
+      allArticles[src] = allArticles[src].concat(items);
+    }
+  }
+  await fetchMarketsIfNeeded();
+}
+
+/* ========== Filtering & Rendering ========== */
+
+function filterArticles() {
+  let articles = activeSource === 'All' ? Object.values(allArticles).flat() : (allArticles[activeSource] || []);
+  if (activeCategory) {
+    const catLower = activeCategory.toLowerCase();
+    articles = articles.filter(a => {
+      // prefer explicit category assigned from mapping
+      if (a.category && a.category.toLowerCase() === catLower) return true;
+      // fallback: text match in title/description
+      const text = (a.title + ' ' + (a.description || '')).toLowerCase();
+      return text.includes(catLower);
+    });
+  }
+
+  // sort by normalized pubDate (newest first)
+  return articles.sort((a, b) => {
+    const ta = normalizePubDate(a.pubDate);
+    const tb = normalizePubDate(b.pubDate);
+    return tb - ta;
+  });
+}
+
+function render() {
+  // toggle active classes
+  Array.from(sourceTabs.children).forEach(btn => btn.classList.toggle('active', btn.textContent === activeSource));
+  Array.from(categoryTabs.children).forEach(btn => btn.classList.toggle('active', btn.textContent === activeCategory));
+
+  const container = document.getElementById('content');
+  container.innerHTML = '';
+  const articles = filterArticles();
+
+  // Make Markets card first when showing Markets source
+  let list = Array.from(articles);
+  if (activeSource === 'Markets') {
+    const idx = list.findIndex(a => a.source === 'Markets');
+    if (idx > 0) {
+      const [m] = list.splice(idx, 1);
+      list.unshift(m);
+    }
+  }
+
+  const totalCards = list.length;
+  const columns = 4;
+  const remainder = totalCards % columns;
+  const placeholderCards = remainder ? columns - remainder : 0;
+
+  list.forEach(a => {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const img = document.createElement('img');
+    img.src = getArticleImage(a);
+    img.onerror = () => { img.src = PLACEHOLDER_LOGO; };
+    card.appendChild(img);
+
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = a.title || 'No title';
+    card.appendChild(title);
+
+    const srcDiv = document.createElement('div');
+    srcDiv.className = 'source';
+    srcDiv.textContent = a.source || activeSource;
+    card.appendChild(srcDiv);
+
+    const dateDiv = document.createElement('div');
+    dateDiv.className = 'date';
+    const ms = normalizePubDate(a.pubDate);
+    const d = new Date(ms);
+    dateDiv.textContent = d.toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+    });
+    card.appendChild(dateDiv);
+
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.innerHTML = a.description || '';
+    card.appendChild(summary);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const link = document.createElement('a');
+    link.href = a.link || '#';
+    link.target = '_blank';
+    link.textContent = 'Read full article';
+    actions.appendChild(link);
+    card.appendChild(actions);
+
+    container.appendChild(card);
+  });
+
+  // placeholders to fill the final row and keep layout left-justified
+  for (let i = 0; i < placeholderCards; i++) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const img = document.createElement('img');
+    img.src = PLACEHOLDER_LOGO;
+    card.appendChild(img);
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = 'Global Lens';
+    card.appendChild(title);
+    container.appendChild(card);
+  }
+}
+
+/* ========== Init ========== */
+(async () => {
+  await fetchAll();
+  render();
+})();
+</script>
+</body>
+</html>
