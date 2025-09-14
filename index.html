@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<style>
+body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f5f5f5; }
+header { text-align:center; padding:1rem; background:#2c3e50; color:white; font-size:1.5rem; }
+.tab-bar { display:flex; flex-wrap:wrap; justify-content:center; background:#34495e; padding:0.5rem; }
+.tab-bar button { margin:0.2rem; padding:0.5rem 1rem; border:none; border-radius:5px; background:#ecf0f1; cursor:pointer; }
+.tab-bar button.active { background:#e67e22; color:white; }
+.category-bar { display:flex; flex-wrap:wrap; justify-content:center; padding:0.5rem; background:#bdc3c7; }
+.category-bar button { margin:0.2rem; padding:0.3rem 0.7rem; border:none; border-radius:5px; background:#ecf0f1; cursor:pointer; }
+.category-bar button.active { background:#e74c3c; color:white; }
+#content { display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:1rem; padding:1rem; align-items:start; }
+.card {
+  background:white;
+  border-radius:10px;
+  padding:1rem;
+  box-shadow:0 2px 6px rgba(0,0,0,0.1);
+  display:flex;
+  flex-direction:column;
+  justify-content:space-between;
+  height:450px;            /* ✅ Fixed height for all cards */
+}
+.card img { max-width:100%; border-radius:5px; margin-bottom:0.5rem; object-fit:cover; height:180px; }
+.card .title { font-weight:bold; margin-bottom:0.5rem; }
+.card .source { font-size:0.8rem; color:#7f8c8d; margin-bottom:0.5rem; }
+.card .summary {
+  flex:1;
+  overflow:auto;           /* ✅ Scroll if text is long */
+  margin-bottom:0.5rem;
+}
+.market-indices { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:1rem; margin:1rem; }
+.market-card { background:#ffffff; border-radius:8px; padding:0.5rem; box-shadow:0 1px 4px rgba(0,0,0,0.1); text-align:center; }
+.market-card .name { font-weight:bold; }
+#backToTop { position:fixed; bottom:20px; right:20px; background:#e67e22; color:white; border:none; border-radius:50%; width:50px; height:50px; font-size:1.5rem; cursor:pointer; display:none; }
+@media (max-width: 768px) { #content { grid-template-columns: 1fr; } }
+@media (min-width: 769px) and (max-width: 1024px) { #content { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<header>Global Lens</header>
+<div class="tab-bar" id="sourceTabs"></div>
+<div class="category-bar" id="categoryTabs"></div>
+<div id="marketData" style="display:none">
+  <h2 style="text-align:center">Market Indices</h2>
+  <div class="market-indices" id="indices"></div>
+</div>
+<div id="content"></div>
+<button id="backToTop">↑</button>
+<script>
+const RSS2JSON_API = 'tv1jlyo8aydiiehkz19nesknmhi2xk1gx0kaw23j';
+const FINNHUB_API = 'd32q9dhr01qtm6316bk0d32q9dhr01qtm6316bkg';
+const sources = {
+  'All': [],
+  'The Guardian': ['https://www.theguardian.com/world/rss'],
+  'BBC': ['http://feeds.bbci.co.uk/news/rss.xml'],
+  'NPR': ['https://www.npr.org/rss/rss.php?id=1001'],
+  'Billboard': ['https://www.billboard.com/feed/'],
+  'Crunch': ['https://techcrunch.com/feed/'],
+  'CNBC': ['https://www.cnbc.com/id/100003114/device/rss/rss.html'],
+  'Bloomberg': ['https://feeds.bloomberg.com/markets/news.rss'],
+  'Markets': []
+};
+const categories = ['World','Business','Technology','Science','Health','Sports','Culture'];
+let activeSource = 'All';
+let activeCategory = '';
+let allArticles = {};
+
+// Build tabs
+const sourceTabs = document.getElementById('sourceTabs');
+for(const s in sources){
+  const btn = document.createElement('button');
+  btn.textContent = s;
+  btn.onclick = ()=> { activeSource=s; activeCategory=''; render(); toggleMarkets(); };
+  if(s==='All') btn.classList.add('active');
+  sourceTabs.appendChild(btn);
+}
+const categoryTabs = document.getElementById('categoryTabs');
+categories.forEach(cat => {
+  const btn = document.createElement('button');
+  btn.textContent = cat;
+  btn.onclick = ()=> { activeCategory = activeCategory===cat ? '' : cat; render(); };
+  categoryTabs.appendChild(btn);
+});
+
+// Back to top
+const backToTop = document.getElementById('backToTop');
+backToTop.onclick = ()=> window.scrollTo({top:0,behavior:'smooth'});
+window.onscroll = ()=>{ backToTop.style.display = window.scrollY>300?'block':'none'; };
+
+async function fetchRSS(url){
+  try{
+    const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=${RSS2JSON_API}&count=30`);
+    const data = await res.json();
+    return data.items.map(i=>({...i, source:data.feed.title}));
+  }catch(e){ console.error('RSS Error',url,e); return []; }
+}
+
+async function fetchMarkets(){
+  const indicesEl = document.getElementById('indices');
+  indicesEl.innerHTML='';
+  const symbols = ["^GSPC","^DJI","^IXIC","^TSX"];
+  for(const s of symbols){
+    try {
+      const r = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${s}`);
+      const d = await r.json();
+      const q = d.quoteResponse.result[0];
+      const div = document.createElement('div');
+      div.className='market-card';
+      div.innerHTML=`<div class='name'>${q.shortName||s}</div>
+                     <div>Price: ${q.regularMarketPrice}</div>
+                     <div>Change: ${q.regularMarketChange.toFixed(2)} (${q.regularMarketChangePercent.toFixed(2)}%)</div>`;
+      indicesEl.appendChild(div);
+    } catch(e){ console.error('Market data error', e); }
+  }
+  try {
+    const res = await fetch(`https://finnhub.io/api/v1/news?category=general&token=${FINNHUB_API}`);
+    const data = await res.json();
+    allArticles['Markets'] = data.map(d=>({
+      title:d.headline, link:d.url, pubDate:d.datetime*1000,
+      description:d.summary, enclosure:{link:d.image}, source:'Finnhub'
+    }));
+  } catch(e){ console.error('Finnhub news error', e); }
+}
+
+async function fetchAll(){
+  for(const src in sources){
+    allArticles[src] = [];
+    for(const feed of sources[src]){
+      const items = await fetchRSS(feed);
+      allArticles[src] = allArticles[src].concat(items);
+    }
+  }
+  await fetchMarkets();
+}
+
+function filterArticles(){
+  let articles = activeSource==='All'
+    ? Object.values(allArticles).flat()
+    : (allArticles[activeSource]||[]);
+  if(activeCategory){
+    const catLower = activeCategory.toLowerCase();
+    articles = articles.filter(a=>{
+      const inText = (a.title + ' ' + (a.description||'')).toLowerCase().includes(catLower);
+      const inCat  = a.categories && a.categories.some(c => c.toLowerCase().includes(catLower));
+      return inText || inCat;
+    });
+  }
+  return articles.sort((a,b)=> new Date(b.pubDate)-new Date(a.pubDate));
+}
+
+function toggleMarkets(){
+  document.getElementById('marketData').style.display = (activeSource==='Markets')?'block':'none';
+}
+
+function render(){
+  Array.from(sourceTabs.children).forEach(btn=> btn.classList.toggle('active',btn.textContent===activeSource));
+  Array.from(categoryTabs.children).forEach(btn=> btn.classList.toggle('active',btn.textContent===activeCategory));
+  const container = document.getElementById('content');
+  container.innerHTML='';
+  const articles = filterArticles();
+  articles.forEach(a=>{
+    const card = document.createElement('div');
+    card.className='card';
+    if(a.enclosure && a.enclosure.link){
+      const img = document.createElement('img'); img.src=a.enclosure.link; card.appendChild(img);
+    }
+    const title = document.createElement('div'); title.className='title'; title.textContent=a.title; card.appendChild(title);
+    const srcDiv = document.createElement('div'); srcDiv.className='source'; srcDiv.textContent=a.source||activeSource; card.appendChild(srcDiv);
+    const summary = document.createElement('div'); summary.className='summary'; summary.textContent=a.description||''; card.appendChild(summary);
+    const link = document.createElement('a'); link.href=a.link; link.target='_blank'; link.textContent='Read full article'; card.appendChild(link);
+    container.appendChild(card);
+  });
+}
+
+(async ()=>{ await fetchAll(); render(); })();
+</script>
+</body>
+</html>
