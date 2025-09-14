@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f4f4f4; }
+    header { background: #004080; color: white; padding: 1rem; text-align: center; font-size: 1.5rem; }
+    nav { display: flex; justify-content: center; background: #0066cc; flex-wrap: wrap; }
+    nav button { padding: 0.5rem 1rem; margin: 0.5rem; border: none; background: #0080ff; color: white; cursor: pointer; font-size: 1rem; border-radius: 4px; }
+    nav button.active { background: #004080; }
+    .container { padding: 1rem; display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 1rem; }
+    .card { background: white; width: 23%; min-width: 220px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+    .card img { width: 100%; height: 140px; object-fit: cover; }
+    .card-content { padding: 0.5rem 1rem; flex-grow: 1; display: flex; flex-direction: column; }
+    .card-content h3 { margin: 0.5rem 0; font-size: 1.1rem; flex-grow: 1; }
+    .card-content p { font-size: 0.9rem; margin: 0.2rem 0; flex-grow: 1; }
+    .card-content a { text-decoration: none; color: #004080; margin-top: auto; font-weight: bold; }
+    @media (max-width: 768px) { .card { width: 48%; } }
+    @media (max-width: 480px) { .card { width: 98%; } }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    th { background-color: #004080; color: white; }
+</style>
+</head>
+<body>
+
+<header>Global Lens</header>
+<nav>
+    <button class="tab-button active" data-tab="globalnews">Global</button>
+    <button class="tab-button" data-tab="npr">NPR</button>
+    <button class="tab-button" data-tab="guardian">The Guardian</button>
+    <button class="tab-button" data-tab="billboard">Billboard</button>
+    <button class="tab-button" data-tab="markets">Markets</button>
+</nav>
+
+<div id="content" class="container"></div>
+
+<script>
+const tabs = document.querySelectorAll('.tab-button');
+const content = document.getElementById('content');
+const placeholderLogo = 'https://raw.githubusercontent.com/andygallagher999-oss/Newsapp/main/assets/images/global-lens-logo.png';
+
+const feeds = {
+    globalnews: 'https://globalnews.ca/feed/',
+    npr: [
+        'https://www.npr.org/rss/rss.php?id=1001',
+        'https://www.npr.org/rss/rss.php?id=1019',
+        'https://www.npr.org/rss/rss.php?id=1004',
+        'https://www.npr.org/rss/rss.php?id=1003',
+        'https://www.npr.org/rss/rss.php?id=1014'
+    ],
+    guardian: 'https://www.theguardian.com/world/rss',
+    billboard: 'https://www.billboard.com/feed/',
+    markets: null
+};
+
+let currentTab = 'globalnews';
+tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentTab = tab.dataset.tab;
+        loadTab(currentTab);
+    });
+});
+
+loadTab(currentTab);
+
+async function loadTab(tab) {
+    content.innerHTML = '';
+    if(tab === 'markets'){ loadMarkets(); return; }
+    let feedUrls = feeds[tab];
+    if(!Array.isArray(feedUrls)) feedUrls = [feedUrls];
+    for(const url of feedUrls){
+        try {
+            const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
+            const data = await res.json();
+            const parser = new DOMParser();
+            const xml = parser.parseFromString(data.contents,'application/xml');
+            const items = xml.querySelectorAll('item');
+            items.forEach(item => {
+                let img = placeholderLogo;
+                if(item.querySelector('enclosure')) img = item.querySelector('enclosure').getAttribute('url');
+                else if(item.querySelector('media\\:content')) img = item.querySelector('media\\:content').getAttribute('url');
+
+                const title = item.querySelector('title')?.textContent || '';
+                const link = item.querySelector('link')?.textContent || '#';
+                const description = item.querySelector('description')?.textContent || '';
+
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <img src="${img}" alt="${title}">
+                    <div class="card-content">
+                        <h3>${title}</h3>
+                        <p>${description}</p>
+                        <a href="${link}" target="_blank">Read More</a>
+                    </div>
+                `;
+                content.appendChild(card);
+            });
+
+            // Fill empty slots for layout
+            const totalCards = content.childElementCount;
+            const remainder = totalCards % 4;
+            if(remainder !== 0){
+                const fillers = 4 - remainder;
+                for(let i=0;i<fillers;i++){
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.innerHTML = `<img src="${placeholderLogo}" alt="Global Lens"><div class="card-content"><h3>Global Lens</h3></div>`;
+                    content.appendChild(card);
+                }
+            }
+
+        } catch(err){
+            console.error('Error loading feed', url, err);
+        }
+    }
+}
+
+async function loadMarkets(){
+    content.innerHTML = '';
+    const symbols = ['^GSPC','^DJI','^IXIC','^TSX'];
+    const apiKey = 'YOUR_FINNHUB_API_KEY';
+    try{
+        let tableHTML = '<table><tr><th>Index</th><th>Price</th><th>Change</th></tr>';
+        for(const symbol of symbols){
+            const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${apiKey}`);
+            const data = await res.json();
+            const price = data.c || data.pc || 'N/A';
+            const change = data.d || (data.c && data.pc ? (data.c - data.pc).toFixed(2) : 'N/A');
+            tableHTML += `<tr><td>${symbol}</td><td>${price}</td><td>${change}</td></tr>`;
+        }
+        const tableDiv = document.createElement('div');
+        tableDiv.innerHTML = tableHTML;
+        content.appendChild(tableDiv);
+
+        // Add placeholder cards for layout
+        for(let i=0;i<4;i++){
+            const card = document.createElement('div');
+            card.className = 'card';
+            card.innerHTML = `<img src="${placeholderLogo}" alt="Global Lens"><div class="card-content"><h3>Market Data</h3></div>`;
+            content.appendChild(card);
+        }
+
+    } catch(err){
+        console.error('Error loading market data', err);
+    }
+}
+</script>
+
+</body>
+</html>
