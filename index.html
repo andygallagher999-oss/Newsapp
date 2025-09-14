@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f4f4f4;
+    }
+    header {
+        background-color: #004080;
+        color: white;
+        padding: 1rem;
+        text-align: center;
+        font-size: 1.8rem;
+        font-weight: bold;
+    }
+    nav {
+        display: flex;
+        background-color: #0066cc;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    nav button {
+        background: none;
+        border: none;
+        color: white;
+        padding: 1rem 2rem;
+        cursor: pointer;
+        font-size: 1rem;
+    }
+    nav button.active {
+        background-color: #004080;
+    }
+    #cards-container {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        padding: 1rem;
+        gap: 1rem;
+    }
+    .card {
+        background-color: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        width: 23%;
+        min-width: 250px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .card img {
+        width: 100%;
+        height: 160px;
+        object-fit: cover;
+    }
+    .card-content {
+        padding: 0.5rem 1rem 1rem 1rem;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+    .card-title {
+        font-weight: bold;
+        margin: 0.5rem 0;
+        flex: 0 0 auto;
+    }
+    .card-description {
+        flex: 1;
+        font-size: 0.9rem;
+    }
+    .card-link {
+        margin-top: 0.5rem;
+        text-decoration: none;
+        color: #004080;
+        font-weight: bold;
+    }
+    @media (max-width: 1024px) {
+        .card {
+            width: 48%;
+        }
+    }
+    @media (max-width: 600px) {
+        .card {
+            width: 100%;
+        }
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    th, td {
+        padding: 0.25rem 0.5rem;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+        font-size: 0.9rem;
+    }
+</style>
+</head>
+<body>
+<header>Global Lens</header>
+<nav>
+    <button class="tab-btn active" data-tab="global">Global</button>
+    <button class="tab-btn" data-tab="npr">NPR</button>
+    <button class="tab-btn" data-tab="guardian">Guardian</button>
+    <button class="tab-btn" data-tab="billboard">Billboard</button>
+    <button class="tab-btn" data-tab="markets">Markets</button>
+</nav>
+
+<div id="cards-container"></div>
+
+<script>
+const tabs = document.querySelectorAll('.tab-btn');
+const container = document.getElementById('cards-container');
+const placeholderImg = 'https://raw.githubusercontent.com/andygallagher999-oss/Newsapp/main/assets/images/global-lens-logo.png';
+
+let feeds = {
+    global: ['https://globalnews.ca/feed/'],
+    npr: [
+        'https://www.npr.org/rss/rss.php?id=1001',
+        'https://www.npr.org/rss/rss.php?id=1019',
+        'https://www.npr.org/rss/rss.php?id=1004',
+        'https://www.npr.org/rss/rss.php?id=1003',
+        'https://www.npr.org/rss/rss.php?id=1005'
+    ],
+    guardian: ['https://www.theguardian.com/world/rss'],
+    billboard: ['https://www.billboard.com/feed/']
+};
+
+let marketIndices = [
+    {symbol: "^GSPC", name:"S&P 500"},
+    {symbol: "^DJI", name:"Dow Jones"},
+    {symbol: "^IXIC", name:"NASDAQ"},
+    {symbol: "^TSX", name:"TSX"}
+];
+
+tabs.forEach(tab => tab.addEventListener('click', () => {
+    tabs.forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    loadFeed(tab.dataset.tab);
+}));
+
+async function fetchRSS(url) {
+    try {
+        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+        return data.items;
+    } catch(err) {
+        console.error('RSS fetch error:', err);
+        return [];
+    }
+}
+
+async function loadFeed(tab) {
+    container.innerHTML = '';
+
+    if(tab === 'markets') {
+        let card = document.createElement('div');
+        card.className = 'card';
+        let content = `<div class="card-content"><div class="card-title">Market Indices</div><table>`;
+        for(let idx of marketIndices){
+            content += `<tr><td>${idx.symbol}</td><td>${idx.name}</td><td id="${idx.symbol}">Loading...</td></tr>`;
+        }
+        content += `</table></div>`;
+        card.innerHTML = content;
+        container.appendChild(card);
+
+        marketIndices.forEach(idx => {
+            fetch(`https://finnhub.io/api/v1/quote?symbol=${idx.symbol}&token=YOUR_FINNHUB_API_KEY`)
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById(idx.symbol).innerText = data.c || "Latest Close N/A";
+            })
+            .catch(() => {
+                document.getElementById(idx.symbol).innerText = "Latest Close N/A";
+            });
+        });
+
+        return;
+    }
+
+    const urls = feeds[tab];
+    let allItems = [];
+    for(let url of urls){
+        const items = await fetchRSS(url);
+        allItems = allItems.concat(items);
+    }
+
+    if(allItems.length < 4){
+        while(allItems.length < 4){
+            allItems.push({
+                title: "",
+                link: "#",
+                description: "",
+                thumbnail: placeholderImg
+            });
+        }
+    }
+
+    for(let item of allItems){
+        const card = document.createElement('div');
+        card.className = 'card';
+        const img = item.thumbnail || placeholderImg;
+        const desc = item.description || '';
+        card.innerHTML = `<img src="${img}" onerror="this.src='${placeholderImg}'"><div class="card-content">
+            <div class="card-title">${item.title || " "}</div>
+            <div class="card-description">${desc}</div>
+            <a class="card-link" href="${item.link}" target="_blank">Read More</a>
+        </div>`;
+        container.appendChild(card);
+    }
+}
+
+// Load default tab
+loadFeed('global');
+</script>
+</body>
+</html>
