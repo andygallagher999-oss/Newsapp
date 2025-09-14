@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Global Lens</title>
+<style>
+  :root{--accent:#e67e22;--muted:#95a5a6}
+  body{font-family:Inter,system-ui,Arial,sans-serif;margin:0;background:#f5f7fa}
+  header{background:#233040;color:#fff;padding:14px 16px;text-align:center;font-size:1.25rem}
+  .tab-bar{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:10px;background:#34495e}
+  .tab-bar button{background:#ecf0f1;border:0;padding:8px 12px;border-radius:8px;cursor:pointer}
+  .tab-bar button.active{background:var(--accent);color:#fff}
+  .category-bar{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:8px;background:#d6dcdf}
+  .category-bar button{background:#ecf0f1;border:0;padding:6px 10px;border-radius:8px;cursor:pointer}
+  .category-bar button.active{background:#c0392b;color:#fff}
+  #content{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:16px}
+  @media(max-width:1024px){#content{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:720px){#content{grid-template-columns:1fr}}
+  .card{background:#fff;border-radius:12px;padding:12px;box-shadow:0 6px 20px rgba(0,0,0,0.06);display:flex;flex-direction:column;height:350px;overflow:hidden;position:relative}
+  .card img{width:100%;height:140px;object-fit:cover;border-radius:8px;margin-bottom:10px;background:#e9eef2}
+  .title{font-weight:700;margin-bottom:6px;font-size:1rem;color:#222}
+  .meta{display:flex;gap:8px;align-items:center;font-size:0.8rem;color:var(--muted);margin-bottom:8px}
+  .summary{flex:1;overflow:hidden;font-size:0.95rem;color:#333;line-height:1.35}
+  .summary.collapsed{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
+  .actions{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+  .full-link{color:#2d79c7;text-decoration:none;font-weight:600}
+  .read-btn{background:var(--accent);border:0;color:#fff;padding:6px 10px;border-radius:8px;cursor:pointer}
+  .placeholder{background:#dfe7ec;display:flex;align-items:center;justify-content:center;color:#7f8c8d}
+  #marketData{padding:12px}
+  .market-indices{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .market-card{background:#fff;padding:8px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.05);min-width:140px}
+  #backToTop{position:fixed;right:18px;bottom:18px;background:var(--accent);color:#fff;border:0;width:44px;height:44px;border-radius:50%;display:none;cursor:pointer}
+</style>
+</head>
+<body>
+<header>Global Lens</header>
+<div class="tab-bar" id="sourceTabs"></div>
+<div class="category-bar" id="categoryTabs"></div>
+<div id="marketData" style="display:none">
+  <div class="market-indices" id="indices"></div>
+</div>
+<main id="content"></main>
+<button id="backToTop">↑</button>
+<script>
+// Config
+const RSS2JSON_API = 'tv1jlyo8aydiiehkz19nesknmhi2xk1gx0kaw23j';
+const FINNHUB_API = 'd32q9dhr01qtm6316bk0d32q9dhr01qtm6316bkg';
+const PLACEHOLDER = 'https://via.placeholder.com/600x300?text=No+image';
+
+const sources = {
+  'All': [],
+  'The Guardian': ['https://www.theguardian.com/world/rss'],
+  'Billboard': ['https://www.billboard.com/feed/'],
+  'Crunch': ['https://techcrunch.com/feed/'],
+  'CNBC': ['https://www.cnbc.com/id/100003114/device/rss/rss.html'],
+  'Bloomberg': ['https://feeds.bloomberg.com/markets/news.rss'],
+  'Markets': []
+};
+const categories = ['World','Business','Technology','Science','Health','Sports','Culture'];
+let activeSource = 'All';
+let activeCategory = '';
+let allArticles = {};
+
+// Helpers
+function safeDate(d){ if(!d) return ''; const t = isNaN(Number(d)) ? Date.parse(d) : Number(d); if(isNaN(t)) return ''; return new Date(t).toLocaleString(); }
+function extractImage(item){
+  // Try common fields
+  if(item.enclosure){ if(typeof item.enclosure === 'string') return item.enclosure; if(item.enclosure.link) return item.enclosure.link; }
+  if(item.thumbnail) return item.thumbnail;
+  if(item.image && item.image.url) return item.image.url;
+  // try media:content style
+  if(item['media:content'] && item['media:content'].url) return item['media:content'].url;
+  // parse description/content for first <img>
+  const html = item.content || item.description || '';
+  if(html){ const tmp = document.createElement('div'); tmp.innerHTML = html; const img = tmp.querySelector('img'); if(img) return img.src; }
+  return null;
+}
+
+async function fetchRSS(url){
+  try{
+    const resp = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=${RSS2JSON_API}&count=30`);
+    const data = await resp.json();
+    if(!data || !data.items) return [];
+    return data.items.map(i=>({
+      title: i.title,
+      link: i.link,
+      pubDate: i.pubDate || i.pubDate_ms || i.isoDate || i.pubDate,
+      descriptionHtml: i.content || i.description || '',
+      source: data.feed && data.feed.title ? data.feed.title : '',
+      raw: i
+    }));
+  }catch(err){ console.error('fetchRSS',url,err); return []; }
+}
+
+async function fetchAll(){
+  // fetch per-source
+  for(const src of Object.keys(sources)){
+    allArticles[src]=[];
+    for(const feed of sources[src]){
+      const items = await fetchRSS(feed);
+      // attach image and cleaned description html
+      const normalized = items.map(it=>({
+        title: it.title,
+        link: it.link,
+        pubDate: it.pubDate,
+        descriptionHtml: it.descriptionHtml,
+        image: extractImage(it.raw) || null,
+        source: it.source || src
+      }));
+      allArticles[src] = allArticles[src].concat(normalized);
+    }
+  }
+  // Finnhub market news (also used for Markets tab)
+  try{
+    const res = await fetch(`https://finnhub.io/api/v1/news?category=general&token=${FINNHUB_API}`);
+    const news = await res.json();
+    allArticles['Markets'] = (news || []).map(n=>({title:n.headline,link:n.url,pubDate:n.datetime*1000,descriptionHtml:n.summary,image:n.image,source:'Finnhub'}));
+  }catch(e){ console.error('finnhub news',e); allArticles['Markets']=[]; }
+}
+
+function filterArticles(){
+  let list = activeSource==='All' ? Object.values(allArticles).flat() : (allArticles[activeSource]||[]);
+  if(activeCategory){ const c = activeCategory.toLowerCase(); list = list.filter(a=> (a.title + ' ' + (a.descriptionHtml||'')).toLowerCase().includes(c)); }
+  return list.sort((a,b)=> new Date(b.pubDate)-new Date(a.pubDate));
+}
+
+// UI build
+const sourceTabs = document.getElementById('sourceTabs');
+for(const s of Object.keys(sources)){
+  const btn = document.createElement('button'); btn.textContent=s; btn.onclick=()=>{activeSource=s; activeCategory=''; render(); toggleMarkets();};
+  if(s===activeSource) btn.classList.add('active'); sourceTabs.appendChild(btn);
+}
+const categoryTabs = document.getElementById('categoryTabs');
+for(const c of categories){ const b=document.createElement('button'); b.textContent=c; b.onclick=()=>{ activeCategory = activeCategory===c? '': c; render(); }; categoryTabs.appendChild(b); }
+
+function toggleMarkets(){ document.getElementById('marketData').style.display = (activeSource==='Markets') ? 'block' : 'none'; }
+
+// Render cards
+function render(){
+  // active states
+  Array.from(sourceTabs.children).forEach(btn=> btn.classList.toggle('active', btn.textContent===activeSource));
+  Array.from(categoryTabs.children).forEach(btn=> btn.classList.toggle('active', btn.textContent===activeCategory));
+
+  const container = document.getElementById('content'); container.innerHTML='';
+  const list = filterArticles();
+
+  list.forEach(item=>{
+    const card = document.createElement('article'); card.className='card';
+
+    // image
+    const img = document.createElement('img');
+    const imageUrl = item.image || null;
+    img.src = imageUrl || PLACEHOLDER_URL();
+    img.onerror = ()=>{ img.src = PLACEHOLDER_URL(); };
+    card.appendChild(img);
+
+    // title
+    const t = document.createElement('div'); t.className='title'; t.textContent = item.title || ''; card.appendChild(t);
+
+    // meta (source + date)
+    const meta = document.createElement('div'); meta.className='meta';
+    const srcSpan = document.createElement('span'); srcSpan.textContent = item.source || activeSource; meta.appendChild(srcSpan);
+    const dateSpan = document.createElement('span'); dateSpan.textContent = safeDate(item.pubDate); meta.appendChild(dateSpan);
+    card.appendChild(meta);
+
+    // summary (render HTML)
+    const summary = document.createElement('div'); summary.className='summary collapsed'; summary.innerHTML = item.descriptionHtml || '';
+    card.appendChild(summary);
+
+    // actions: full link left, read more right
+    const actions = document.createElement('div'); actions.className='actions';
+    const fullA = document.createElement('a'); fullA.className='full-link'; fullA.href = item.link || '#'; fullA.target='_blank'; fullA.textContent = 'Read Full Article'; actions.appendChild(fullA);
+
+    const readBtn = document.createElement('button'); readBtn.className='read-btn'; readBtn.textContent = 'Read More'; readBtn.style.display='none';
+    readBtn.onclick = ()=>{
+      const expanded = summary.classList.toggle('expanded');
+      readBtn.textContent = expanded ? 'Read Less' : 'Read More';
+      // when expanded, allow summary to show full content (remove max restrictions)
+      if(expanded){ summary.style.maxHeight = 'none'; } else { summary.style.maxHeight = defaultSummaryMaxHeight(summary) + 'px'; }
+    };
+    actions.appendChild(readBtn);
+    card.appendChild(actions);
+
+    container.appendChild(card);
+
+    // after layout, check overflow and display button if needed
+    requestAnimationFrame(()=> checkOverflowAndShow(summary, readBtn));
+    // also if image finishes loading later, re-check
+    img.addEventListener('load', ()=> requestAnimationFrame(()=> checkOverflowAndShow(summary, readBtn)));
+  });
+}
+
+function defaultSummaryMaxHeight(summaryEl){
+  // we want the collapsed maxHeight to be roughly 4 lines; compute via line-height
+  const lineHeight = parseFloat(getComputedStyle(summaryEl).lineHeight) || 18;
+  return Math.round(lineHeight * 4);
+}
+
+function checkOverflowAndShow(summaryEl, btn){
+  // set collapsed maxHeight if not set
+  if(!summaryEl.style.maxHeight || summaryEl.style.maxHeight===''){
+    summaryEl.style.maxHeight = defaultSummaryMaxHeight(summaryEl) + 'px';
+  }
+  // compare scrollHeight to clientHeight
+  if(summaryEl.scrollHeight > summaryEl.clientHeight + 1){ btn.style.display = 'inline-block'; }
+  else { btn.style.display = 'none'; }
+}
+
+function PLACEHOLDER_URL(){ return 'https://via.placeholder.com/800x400?text=No+Image'; }
+
+// Market indices (simple Finnhub fetch - if unsupported, will be skipped)
+async function loadMarkets(){
+  const indicesEl = document.getElementById('indices'); indicesEl.innerHTML='';
+  const symbols = ['^GSPC','^DJI','^IXIC','^GSPTSE'];
+  for(const s of symbols){
+    try{
+      const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(s)}&token=${FINNHUB_API}`);
+      const q = await r.json();
+      const div = document.createElement('div'); div.className='market-card';
+      div.innerHTML = `<div class="name">${s}</div><div>Price: ${q.c || '-'} </div><div>Change: ${q.d || '-'} (${q.dp || '-' }%)</div>`;
+      indicesEl.appendChild(div);
+    }catch(err){ console.debug('market fetch failed for',s,err); }
+  }
+}
+
+// init
+(async function init(){
+  await fetchAll();
+  await loadMarkets();
+  render();
+})();
+
+// Back to top
+const backBtn = document.getElementById('backToTop'); window.addEventListener('scroll', ()=>{ backBtn.style.display = window.scrollY>300 ? 'inline-block' : 'none'; }); backBtn.onclick = ()=> window.scrollTo({top:0,behavior:'smooth'});
+
+// Re-check on resize
+window.addEventListener('resize', ()=>{ document.querySelectorAll('.card').forEach(card=>{ const summary = card.querySelector('.summary'); const btn = card.querySelector('.read-btn'); if(summary && btn) requestAnimationFrame(()=> checkOverflowAndShow(summary,btn)); }); });
+</script>
+</body>
+</html>
