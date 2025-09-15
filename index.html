@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<style>
+body {font-family:Arial,sans-serif;margin:0;padding:0;background:#f5f5f5;}
+header {text-align:center;padding:1rem;background:#2c3e50;color:white;font-size:1.5rem;font-weight:bold;}
+.tab-bar {display:flex;flex-wrap:wrap;justify-content:center;background:#34495e;padding:0.5rem;}
+.tab-bar button {margin:0.2rem;padding:0.5rem 1rem;border:none;border-radius:5px;background:#ecf0f1;cursor:pointer;font-weight:bold;}
+.tab-bar button.active {background:#e67e22;color:white;}
+.category-bar {display:flex;flex-wrap:wrap;justify-content:center;padding:0.5rem;background:#bdc3c7;}
+.category-bar button {margin:0.2rem;padding:0.3rem 0.7rem;border:none;border-radius:5px;background:#ecf0f1;cursor:pointer;font-weight:bold;}
+.category-bar button.active {background:#e74c3c;color:white;}
+#content {display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;padding:1rem;justify-content:flex-start;}
+.card {background:white;border-radius:10px;padding:1rem;box-shadow:0 2px 6px rgba(0,0,0,0.1);display:flex;flex-direction:column;height:360px;overflow:hidden;position:relative;}
+.card img {width:100%;border-radius:5px;margin-bottom:0.5rem;object-fit:cover;height:120px;}
+.card .title {font-weight:bold;margin-bottom:0.5rem;}
+.card .source {font-size:0.8rem;color:#7f8c8d;margin-bottom:0.5rem;}
+.card .date {font-size:0.8rem;color:#999;margin-bottom:0.5rem;}
+.card .summary {margin-bottom:0.5rem;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;}
+.card.expanded .summary {-webkit-line-clamp:unset;}
+.card .actions {display:flex;justify-content:space-between;align-items:center;margin-top:auto;}
+.card button.read-more {background:none;border:none;color:#e67e22;cursor:pointer;}
+#backToTop {position:fixed;bottom:20px;right:20px;background:#e67e22;color:white;border:none;border-radius:50%;width:50px;height:50px;font-size:1.5rem;cursor:pointer;display:none;}
+.card .summary table {width:100%;border-collapse:collapse;display:block;max-height:120px;overflow:auto;}
+.card .summary table th, .card .summary table td {border:1px solid #ccc;padding:4px;text-align:center;font-size:0.85rem;}
+.card .summary table th {background:#f0f0f0;}
+@media(max-width:768px){.card img{height:100px;}.card .summary table{max-height:150px;}}
+</style>
+</head>
+<body>
+<header>Global Lens</header>
+<div class="tab-bar" id="sourceTabs"></div>
+<div class="category-bar" id="categoryTabs"></div>
+<div id="content"></div>
+<button id="backToTop">↑</button>
+
+<script>
+const RSS2JSON_API='tv1jlyo8aydiiehkz19nesknmhi2xk1gx0kaw23j';
+const FINNHUB_API='d32q9dhr01qtm6316bk0d32q9dhr01qtm6316bkg';
+const PLACEHOLDER_LOGO='https://raw.githubusercontent.com/andygallagher999-oss/Newsapp/main/assets/images/global-lens-logo.png';
+
+const sources = {
+  'All': [],
+  'Global': [
+    { url: 'https://globalnews.ca/feed/', category: 'World' },
+    { url: 'https://globalnews.ca/entertainment/feed/', category: 'Culture' },
+    { url: 'https://globalnews.ca/sports/feed/', category: 'Sports' }
+  ],
+  'The Guardian': [
+    { url:'https://www.theguardian.com/world/rss', category:'World' },
+    { url:'https://www.theguardian.com/business/rss', category:'Business' },
+    { url:'https://www.theguardian.com/science/rss', category:'Science' }
+  ],
+  'BBC': [
+    { url:'http://feeds.bbci.co.uk/news/world/rss.xml', category:'World' },
+    { url:'http://feeds.bbci.co.uk/news/technology/rss.xml', category:'Technology' },
+    { url:'http://feeds.bbci.co.uk/news/business/rss.xml', category:'Business' }
+  ],
+  'NPR': [
+    { url:'https://www.npr.org/rss/rss.php?id=1001', category:'World' },
+    { url:'https://www.npr.org/rss/rss.php?id=1004', category:'Science' },
+    { url:'https://www.npr.org/rss/rss.php?id=1019', category:'Business' },
+    { url:'https://www.npr.org/rss/rss.php?id=1017', category:'Health' },
+    { url:'https://www.npr.org/rss/rss.php?id=1128', category:'Culture' }
+  ],
+  'Billboard': [
+    { url:'https://www.billboard.com/feed/', category:'Culture' }
+  ],
+  'Crunch': [
+    { url:'https://techcrunch.com/feed/', category:'Technology' }
+  ],
+  'CNBC': [
+    { url:'https://www.cnbc.com/id/100003114/device/rss/rss.html', category:'Business' }
+  ],
+  'Markets': []
+};
+
+const categories=['World','Business','Technology','Science','Health','Sports','Culture'];
+let activeSource='All';
+let activeCategory='';
+let allArticles={};
+
+// Build source tabs
+const sourceTabs=document.getElementById('sourceTabs');
+for(const s in sources){
+  const btn=document.createElement('button');
+  btn.textContent=s;
+  btn.onclick=()=>{activeSource=s;activeCategory='';render();fetchMarketsIfNeeded();};
+  if(s==='All') btn.classList.add('active');
+  sourceTabs.appendChild(btn);
+}
+
+// Build category tabs
+const categoryTabs=document.getElementById('categoryTabs');
+categories.forEach(cat=>{
+  const btn=document.createElement('button');
+  btn.textContent=cat;
+  btn.onclick=()=>{activeCategory=activeCategory===cat?'':cat;render();};
+  categoryTabs.appendChild(btn);
+});
+
+// Back to top button
+const backToTop=document.getElementById('backToTop');
+backToTop.onclick=()=>window.scrollTo({top:0,behavior:'smooth'});
+window.onscroll=()=>{backToTop.style.display=window.scrollY>300?'block':'none';};
+
+// Fetch RSS with category
+async function fetchRSS(feedObj){
+  try{
+    const res=await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedObj.url)}&api_key=${RSS2JSON_API}&count=30`);
+    const data=await res.json();
+    return data.items.map(i=>({
+      ...i,
+      source: data.feed.title==='Global News'?'Global':data.feed.title,
+      category: feedObj.category
+    }));
+  }catch(e){ console.error('RSS Error', feedObj.url, e); return []; }
+}
+
+// Get article image
+function getArticleImage(a){
+  let imgUrl=PLACEHOLDER_LOGO;
+  if(a.enclosure && a.enclosure.link) imgUrl=a.enclosure.link;
+  else if(a.thumbnail) imgUrl=a.thumbnail;
+  else{
+    const tempDiv=document.createElement('div');
+    tempDiv.innerHTML=a.description||a.content||'';
+    const imgTag=tempDiv.querySelector('img');
+    if(imgTag) imgUrl=imgTag.src;
+  }
+  return imgUrl;
+}
+
+// Fetch Markets
+async function fetchMarketsIfNeeded(){
+  if(allArticles.Markets && allArticles.Markets.length) return;
+
+  let cards=[];
+  const symbols=[
+    {s:'^GSPC',name:'S&P 500'},
+    {s:'^DJI',name:'Dow Jones'},
+    {s:'^IXIC',name:'Nasdaq'},
+    {s:'^GSPTSE',name:'TSX'}
+  ];
+
+  let tableHTML='<table><tr><th>Index</th><th>Price</th><th>Change</th><th>%Change</th></tr>';
+  for(const sym of symbols){
+    try{
+      const res=await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym.s)}&token=${FINNHUB_API}`);
+      const data=await res.json();
+      const price=(data.c||data.pc||'N/A');
+      const change=(data.d!==undefined?data.d.toFixed(2):'N/A');
+      const pct=(data.dp!==undefined?data.dp.toFixed(2):'N/A');
+      tableHTML+=`<tr><td>${sym.name}</td><td>${price}</td><td>${change}</td><td>${pct}</td></tr>`;
+    }catch(e){
+      tableHTML+=`<tr><td>${sym.name}</td><td colspan="3">Market data not available</td></tr>`;
+    }
+  }
+  tableHTML+='</table>';
+
+  cards.push({
+    title:'Market Indices',
+    link:'#',
+    pubDate:Date.now(),
+    description:tableHTML,
+    enclosure:{link:PLACEHOLDER_LOGO},
+    source:'Markets',
+    category:'Markets'
+  });
+
+  allArticles.Markets=cards;
+}
+
+// Fetch all articles
+async function fetchAll(){
+  for(const src in sources){
+    allArticles[src]=[];
+    for(const feedObj of sources[src]){
+      const items=await fetchRSS(feedObj);
+      allArticles[src]=allArticles[src].concat(items);
+    }
+  }
+  await fetchMarketsIfNeeded();
+}
+
+// Filter articles by source and category
+function filterArticles(){
+  let articles = activeSource==='All'?Object.values(allArticles).flat():allArticles[activeSource]||[];
+  if(activeCategory){
+    articles = articles.filter(a=>a.category===activeCategory);
+  }
+  return articles.sort((a,b)=>new Date(b.pubDate)-new Date(a.pubDate));
+}
+
+// Render articles
+function render(){
+  Array.from(sourceTabs.children).forEach(btn=>btn.classList.toggle('active',btn.textContent===activeSource));
+  Array.from(categoryTabs.children).forEach(btn=>btn.classList.toggle('active',btn.textContent===activeCategory));
+
+  const container=document.getElementById('content');
+  container.innerHTML='';
+  let articles=filterArticles();
+
+  // Ensure Markets card first
+  if(activeSource==='Markets'){
+    const idx=articles.findIndex(a=>a.source==='Markets');
+    if(idx>0){ const [m]=articles.splice(idx,1); articles.unshift(m); }
+  }
+
+  let totalCards=articles.length;
+  const columns=4;
+  const remainder=totalCards%columns;
+  const placeholderCards=remainder?columns-remainder:0;
+
+  articles.forEach(a=>{
+    const card=document.createElement('div');
+    card.className='card';
+    const img=document.createElement('img');
+    img.src=getArticleImage(a);
+    img.onerror=()=>{img.src=PLACEHOLDER_LOGO;};
+    card.appendChild(img);
+
+    const title=document.createElement('div');
+    title.className='title';
+    title.textContent=a.title;
+    card.appendChild(title);
+
+    const srcDiv=document.createElement('div');
+    srcDiv.className='source';
+    srcDiv.textContent=a.source||activeSource;
+    card.appendChild(srcDiv);
+
+    const dateDiv=document.createElement('div');
+    dateDiv.className='date';
+    dateDiv.textContent=new Date(a.pubDate).toLocaleString('en-CA',{timeZone:'America/Toronto'});
+    card.appendChild(dateDiv);
+
+    const summary=document.createElement('div');
+    summary.className='summary';
+    summary.innerHTML=a.description||'';
+    card.appendChild(summary);
+
+    const actions=document.createElement('div');
+    actions.className='actions';
+    const link=document.createElement('a');
+    link.href=a.link;
+    link.target='_blank';
+    link.textContent='Read full article';
+    actions.appendChild(link);
+    card.appendChild(actions);
+
+    container.appendChild(card);
+  });
+
+  for(let i=0;i<placeholderCards;i++){
+    const card=document.createElement('div');
+    card.className='card';
+    const img=document.createElement('img');
+    img.src=PLACEHOLDER_LOGO;
+    card.appendChild(img);
+    const title=document.createElement('div');
+    title.className='title';
+    title.textContent='Global Lens';
+    card.appendChild(title);
+    container.appendChild(card);
+  }
+}
+
+(async()=>{await fetchAll();render();})();
+</script>
+</body>
+</html>
