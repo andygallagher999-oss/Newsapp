@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global Lens</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f5f5f5; }
+    /* Header improvements */
+    header {
+      text-align: center;
+      padding: 1rem 0.5rem;
+      background: #2c3e50;
+      color: white;
+      font-size: 1.6rem;
+      font-weight: 700;
+      border-bottom: 2px solid #e67e22;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      border-radius: 0 0 10px 10px;
+    }
+    /* Tab bar improvements */
+    .tab-bar, .category-bar { display: flex; flex-wrap: wrap; justify-content: center; background: #34495e; padding: 0.5rem; }
+    .tab-bar button, .category-bar button {
+      margin: 0.2rem;
+      padding: 0.5rem 0.8rem;
+      border: none;
+      border-radius: 8px;
+      background: #ecf0f1;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    .tab-bar button:hover, .category-bar button:hover {
+      background: #e67e22;
+      color: white;
+      transform: translateY(-2px);
+    }
+    .tab-bar button.active { background: #e67e22; color: white; }
+    .category-bar button.active { background: #e74c3c; color: white; }
+    #content { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; padding: 1rem; justify-content: flex-start; }
+    .card { background: white; border-radius: 10px; padding: 1rem; box-shadow: 0 2px 6px rgba(0,0,0,0.1); display: flex; flex-direction: column; height: 360px; overflow: hidden; position: relative; }
+    .card img { width: 100%; border-radius: 5px; margin-bottom: 0.5rem; object-fit: cover; height: 120px; }
+    .card .title { font-weight: bold; margin-bottom: 0.5rem; }
+    .card .source { font-size: 0.8rem; color: #7f8c8d; margin-bottom: 0.5rem; }
+    .card .date { font-size: 0.8rem; color: #666; margin-bottom: 0.5rem; }
+    .card .read-time { font-size: 0.8rem; color: #555; margin-bottom: 0.5rem; }
+    .card .summary { margin-bottom: 0.5rem; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+    .card.expanded .summary { -webkit-line-clamp: unset; }
+    .card .actions { display: flex; justify-content: space-between; align-items: center; margin-top: auto; }
+    .card button.read-more { background: none; border: none; color: #e67e22; cursor: pointer; }
+    #backToTop { position: fixed; bottom: 20px; right: 20px; background: #e67e22; color: white; border: none; border-radius: 50%; width: 50px; height: 50px; font-size: 1.5rem; cursor: pointer; display: none; }
+    .card .summary table { width: 100%; border-collapse: collapse; display: block; max-height: 120px; overflow: auto; }
+    .card .summary table th, .card .summary table td { border: 1px solid #ccc; padding: 4px; text-align: center; font-size: 0.85rem; }
+    .card .summary table th { background: #f0f0f0; }
+    .placeholder-img {
+      width: 80%;
+      max-height: 100px;
+      object-fit: contain;
+      opacity: 0.7;
+      margin: 0 auto 0.5rem auto;
+      display: block;
+    }
+    #loading { text-align: center; padding: 2rem; display: none; }
+    #searchBar { margin: 1rem; padding: 0.5rem; width: calc(100% - 2rem); }
+    @media (max-width: 768px) {
+      header { font-size: 1.3rem; padding: 0.8rem 0.5rem; }
+      .tab-bar button, .category-bar button { padding: 0.4rem 0.6rem; font-size: 0.9rem; }
+      .category-bar { padding: 0.3rem; }
+      .card img { height: 100px; }
+      .card .summary table { max-height: 150px; }
+      .placeholder-img { max-height: 70px; }
+    }
+    @media (max-width: 480px) {
+      header { font-size: 1.1rem; padding: 0.6rem 0.3rem; }
+      .tab-bar button, .category-bar button { padding: 0.3rem 0.5rem; font-size: 0.8rem; }
+      #content { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+      .card { height: 320px; }
+      .card img { height: 90px; }
+    }
+  </style>
+</head>
+<body>
+  <header>Global Lens</header>
+  <input type="text" id="searchBar" placeholder="Search articles...">
+  <div class="tab-bar" id="sourceTabs"></div>
+  <div class="category-bar" id="categoryTabs"></div>
+  <div id="loading">Loading articles...</div>
+  <div id="content"></div>
+  <button id="backToTop">↑</button>
+
+  <script>
+    const CONFIG = {
+      RSS2JSON_API: 'tv1jlyo8aydiiehkz19nesknmhi2xk1gx0kaw23j',
+      FINNHUB_API: 'd32q9dhr01qtm6316bk0d32q9dhr01qtm6316bkg',
+      PLACEHOLDER_LOGO: 'https://raw.githubusercontent.com/andygallagher999-oss/Newsapp/main/assets/images/global-lens-logo.png'
+    };
+
+    const sources = {
+      'All': [],
+      'Global': [
+        { url: 'https://globalnews.ca/feed/', category: 'World' },
+        { url: 'https://globalnews.ca/entertainment/feed/', category: 'Culture' },
+        { url: 'https://globalnews.ca/sports/feed/', category: 'Sports' }
+      ],
+      'The Guardian': [
+        { url: 'https://www.theguardian.com/world/rss', category: 'World' },
+        { url: 'https://www.theguardian.com/business/rss', category: 'Business' },
+        { url: 'https://www.theguardian.com/science/rss', category: 'Science' }
+      ],
+      'BBC': [
+        { url: 'http://feeds.bbci.co.uk/news/world/rss.xml', category: 'World' },
+        { url: 'http://feeds.bbci.co.uk/news/technology/rss.xml', category: 'Technology' },
+        { url: 'http://feeds.bbci.co.uk/news/business/rss.xml', category: 'Business' }
+      ],
+      'NPR': [
+        { url: 'https://www.npr.org/rss/rss.php?id=1001', category: 'World' },
+        { url: 'https://www.npr.org/rss/rss.php?id=1004', category: 'Science' },
+        { url: 'https://www.npr.org/rss/rss.php?id=1019', category: 'Business' },
+        { url: 'https://www.npr.org/rss/rss.php?id=1017', category: 'Health' },
+        { url: 'https://www.npr.org/rss/rss.php?id=1128', category: 'Culture' }
+      ],
+      'Billboard': [
+        { url: 'https://www.billboard.com/feed/', category: 'Culture' }
+      ],
+      'Crunch': [
+        { url: 'https://techcrunch.com/feed/', category: 'Technology' }
+      ],
+      'CNBC': [
+        { url: 'https://www.cnbc.com/id/100003114/device/rss/rss.html', category: 'Business' }
+      ],
+      'Markets': [],
+      'Static': [
+        { url: 'static://global-news', category: 'World' },
+        { url: 'static://entertainment', category: 'Culture' },
+        { url: 'static://sports', category: 'Sports' }
+      ]
+    };
+
+    const staticArticles = [
+      {
+        title: '2025 Emmy Awards: The most dazzling looks from TV’s biggest night',
+        source: 'Global',
+        category: 'Culture',
+        pubDate: '2025-09-14',
+        description: 'Television’s biggest night has officially begun, and the stars are serving style, glamour and grace on the Emmy Awards red carpet.',
+        link: '#',
+        enclosure: { link: CONFIG.PLACEHOLDER_LOGO }
+      },
+      {
+        title: 'Blue Jays beat Orioles 11-2 to complete sweep',
+        source: 'Global',
+        category: 'Sports',
+        pubDate: '2025-09-14',
+        description: 'Shane Bieber surrendered one run in six innings, and Ernie Clement and George Springer knocked in two runs apiece to help the Toronto Blue Jays to an 11-2 win to sweep the Baltimore Orioles on Sunday.',
+        link: '#',
+        enclosure: { link: CONFIG.PLACEHOLDER_LOGO }
+      },
+      {
+        title: 'US completes deportation of eight men to South Sudan after legal wrangling',
+        source: 'The Guardian',
+        category: 'World',
+        pubDate: '2025-07-08',
+        description: 'Eight men deported from the US in May and held under guard for weeks at an American military base in Djibouti have reached South Sudan.',
+        link: 'https://www.theguardian.com/us-news/2025/jul/07/us-deportation-men-south-sudan',
+        enclosure: { link: CONFIG.PLACEHOLDER_LOGO }
+      }
+    ];
+
+    const categories = ['World', 'Business', 'Technology', 'Science', 'Health', 'Sports', 'Culture', 'Markets'];
+    const allowedDomains = ['globalnews.ca', 'theguardian.com', 'bbc.co.uk', 'npr.org', 'billboard.com', 'techcrunch.com', 'cnbc.com'];
+    let activeSource = 'All';
+    let activeCategory = '';
+    let allArticles = {};
+    let currentPage = 1;
+    const articlesPerPage = 12;
+
+    // Debounce utility
+    function debounce(func, wait) {
+      let timeout;
+      return function executedFunction(...args) {
+        const later = () => {
+          clearTimeout(timeout);
+          func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+      };
+    }
+
+    // Build source tabs
+    const sourceTabs = document.getElementById('sourceTabs');
+    const trendingBtn = document.createElement('button');
+    trendingBtn.textContent = 'Trending';
+    trendingBtn.setAttribute('aria-label', 'Select trending articles');
+    trendingBtn.setAttribute('role', 'tab');
+    trendingBtn.tabIndex = 0;
+    trendingBtn.onclick = () => { activeSource = 'Static'; activeCategory = ''; currentPage = 1; render(); };
+    trendingBtn.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') trendingBtn.click(); };
+    sourceTabs.appendChild(trendingBtn);
+
+    for (const s in sources) {
+      const btn = document.createElement('button');
+      btn.textContent = s;
+      btn.setAttribute('aria-label', `Select news source ${s}`);
+      btn.setAttribute('role', 'tab');
+      btn.tabIndex = 0;
+      btn.onclick = () => { activeSource = s; activeCategory = ''; currentPage = 1; render(); fetchMarketsIfNeeded(); };
+      btn.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') btn.click(); };
+      if (s === 'All') btn.classList.add('active');
+      sourceTabs.appendChild(btn);
+    }
+
+    // Build category tabs
+    const categoryTabs = document.getElementById('categoryTabs');
+    categories.forEach(cat => {
+      const btn = document.createElement('button');
+      btn.textContent = cat;
+      btn.setAttribute('aria-label', `Filter by category ${cat}`);
+      btn.setAttribute('role', 'tab');
+      btn.tabIndex = 0;
+      btn.onclick = () => { activeCategory = activeCategory === cat ? '' : cat; currentPage = 1; render(); };
+      btn.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') btn.click(); };
+      categoryTabs.appendChild(btn);
+    });
+
+    // Back to top button
+    const backToTop = document.getElementById('backToTop');
+    backToTop.onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.onscroll = debounce(() => {
+      backToTop.style.display = window.scrollY > 300 ? 'block' : 'none';
+    }, 100);
+
+    // Search functionality
+    document.getElementById('searchBar').addEventListener('input', (e) => {
+      currentPage = 1;
+      render(e.target.value.toLowerCase());
+    });
+
+    // Fetch RSS with category
+    async function fetchRSS(feedObj) {
+      if (feedObj.url.startsWith('static://')) {
+        return staticArticles.filter(a => a.category === feedObj.category);
+      }
+      const url = new URL(feedObj.url);
+      if (!allowedDomains.includes(url.hostname)) {
+        console.error('Invalid RSS URL domain:', url.hostname);
+        return [];
+      }
+      try {
+        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedObj.url)}&api_key=${CONFIG.RSS2JSON_API}&count=30`);
+        if (!res.ok) throw new Error('Failed to fetch RSS feed');
+        const data = await res.json();
+        return data.items.map(i => ({
+          ...i,
+          source: data.feed.title === 'Global News' ? 'Global' : data.feed.title,
+          category: feedObj.category
+        }));
+      } catch (e) {
+        console.error('RSS Error', feedObj.url, e);
+        document.getElementById('content').innerHTML = '<p style="text-align: center; color: red;">Failed to load articles. Please try again later.</p>';
+        return [];
+      }
+    }
+
+    // Get article image
+    function getArticleImage(a) {
+      let imgUrl = CONFIG.PLACEHOLDER_LOGO;
+      if (a.enclosure && a.enclosure.link) imgUrl = a.enclosure.link;
+      else if (a.thumbnail) imgUrl = a.thumbnail;
+      else {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = DOMPurify.sanitize(a.description || a.content || '');
+        const imgTag = tempDiv.querySelector('img');
+        if (imgTag) imgUrl = imgTag.src;
+      }
+      return imgUrl;
+    }
+
+    // Fetch Markets with Finnhub data
+    async function fetchMarketsIfNeeded() {
+      if (allArticles.Markets && allArticles.Markets.length) return;
+      let cards = [];
+      const symbols = [
+        { s: '^GSPC', name: 'S&P 500' },
+        { s: '^DJI', name: 'Dow Jones' },
+        { s: '^IXIC', name: 'Nasdaq' },
+        { s: '^GSPTSE', name: 'TSX' }
+      ];
+      let tableHTML = '<table><tr><th>Index</th><th>Price</th><th>Change</th><th>%Change</th></tr>';
+      for (const sym of symbols) {
+        try {
+          const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym.s)}&token=${CONFIG.FINNHUB_API}`);
+          const data = await res.json();
+          const price = (data.c || data.pc || 'N/A');
+          const change = (data.d !== undefined ? data.d.toFixed(2) : 'N/A');
+          const pct = (data.dp !== undefined ? data.dp.toFixed(2) : 'N/A');
+          tableHTML += `<tr><td>${sym.name}</td><td>${price}</td><td>${change}</td><td>${pct}</td></tr>`;
+        } catch (e) {
+          tableHTML += `<tr><td>${sym.name}</td><td colspan="3">Market data not available</td></tr>`;
+        }
+      }
+      tableHTML += '</table>';
+      cards.push({
+        title: 'Market Indices',
+        link: '#',
+        pubDate: Date.now(),
+        description: tableHTML,
+        enclosure: { link: CONFIG.PLACEHOLDER_LOGO },
+        source: 'Markets',
+        category: 'Markets'
+      });
+      allArticles.Markets = cards;
+    }
+
+    // Fetch all articles
+    async function fetchAll() {
+      document.getElementById('loading').style.display = 'block';
+      const cacheKey = 'globalLensArticles';
+      const cacheExpiration = 30 * 60 * 1000; // 30 minutes
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < cacheExpiration) {
+          allArticles = data;
+          await fetchMarketsIfNeeded();
+          render();
+          document.getElementById('loading').style.display = 'none';
+          return;
+        }
+      }
+      try {
+        for (const src in sources) {
+          allArticles[src] = [];
+          for (const feedObj of sources[src]) {
+            const items = await fetchRSS(feedObj);
+            allArticles[src] = allArticles[src].concat(items);
+          }
+        }
+        await fetchMarketsIfNeeded();
+        localStorage.setItem(cacheKey, JSON.stringify({ data: allArticles, timestamp: Date.now() }));
+      } catch (e) {
+        console.error('Failed to fetch articles, using static data', e);
+        allArticles['Static'] = staticArticles;
+        activeSource = 'Static';
+      }
+      document.getElementById('loading').style.display = 'none';
+      render();
+    }
+
+    // Filter articles by source and category
+    function filterArticles(searchQuery = '') {
+      let articles = activeSource === 'All' ? Object.values(allArticles).flat() : allArticles[activeSource] || [];
+      if (activeCategory) {
+        articles = articles.filter(a => a.category === activeCategory);
+      }
+      if (searchQuery) {
+        articles = articles.filter(a =>
+          a.title.toLowerCase().includes(searchQuery) ||
+          a.description.toLowerCase().includes(searchQuery)
+        );
+      }
+      return articles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+    }
+
+    // Estimate read time
+    function estimateReadTime(text) {
+      const wordsPerMinute = 200;
+      const words = text.split(/\s+/).length;
+      return Math.ceil(words / wordsPerMinute);
+    }
+
+    // Render articles
+    function render(searchQuery = '') {
+      Array.from(sourceTabs.children).forEach(btn => btn.classList.toggle('active', btn.textContent === activeSource));
+      Array.from(categoryTabs.children).forEach(btn => btn.classList.toggle('active', btn.textContent === activeCategory));
+      const container = document.getElementById('content');
+      container.innerHTML = '';
+      let articles = filterArticles(searchQuery);
+      if (articles.length === 0) {
+        container.innerHTML = '<p style="text-align: center;">No articles available for this selection.</p>';
+        return;
+      }
+      const start = (currentPage - 1) * articlesPerPage;
+      const paginatedArticles = articles.slice(start, start + articlesPerPage);
+      paginatedArticles.forEach(a => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        const img = document.createElement('img');
+        img.src = getArticleImage(a);
+        img.loading = 'lazy';
+        img.onerror = () => { img.src = CONFIG.PLACEHOLDER_LOGO; };
+        card.appendChild(img);
+        const title = document.createElement('div');
+        title.className = 'title';
+        title.textContent = a.title;
+        card.appendChild(title);
+        const srcDiv = document.createElement('div');
+        srcDiv.className = 'source';
+        srcDiv.textContent = a.source || activeSource;
+        card.appendChild(srcDiv);
+        const dateDiv = document.createElement('div');
+        dateDiv.className = 'date';
+        dateDiv.textContent = new Intl.DateTimeFormat('en-CA', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'America/Toronto'
+        }).format(new Date(a.pubDate));
+        card.appendChild(dateDiv);
+        const readTime = document.createElement('div');
+        readTime.className = 'read-time';
+        readTime.textContent = `${estimateReadTime(a.description || '')} min read`;
+        card.appendChild(readTime);
+        const summary = document.createElement('div');
+        summary.className = 'summary';
+        summary.innerHTML = DOMPurify.sanitize(a.description || '');
+        card.appendChild(summary);
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const link = document.createElement('a');
+        link.href = a.link;
+        link.target = '_blank';
+        link.textContent = 'Read full article';
+        actions.appendChild(link);
+        card.appendChild(actions);
+        container.appendChild(card);
+      });
+      if (articles.length > start + articlesPerPage) {
+        const loadMore = document.createElement('button');
+        loadMore.textContent = 'Load More';
+        loadMore.style = 'margin: 1rem auto; padding: 0.5rem 1rem; display: block;';
+        loadMore.onclick = () => {
+          currentPage++;
+          render(searchQuery);
+        };
+        container.appendChild(loadMore);
+      }
+    }
+
+    (async () => { await fetchAll(); })();
+  </script>
+</body>
+</html>
