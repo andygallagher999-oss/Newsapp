@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<link rel="apple-touch-icon" href="logo.png">
+<style>
+body{font-family:Arial,sans-serif;margin:0;padding:0;background:#f5f5f5;}
+header{display:flex;align-items:center;justify-content:center;padding:1rem;background:#2c3e50;color:white;font-size:1.5rem;}
+header img.header-logo{height:40px;margin-right:0.6rem;}
+.tab-bar{display:flex;flex-wrap:wrap;justify-content:center;background:#34495e;padding:0.5rem;}
+.tab-bar button{margin:0.2rem;padding:0.6rem 1.2rem;border:none;border-radius:6px;background:#ecf0f1;cursor:pointer;font-size:1rem;transition:background 0.2s;flex:1 0 auto;}
+.tab-bar button.active{background:#e67e22;color:white;}
+.tab-bar button:hover{background:#d0d3d4;}
+#content{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;padding:1rem;min-height:300px;}
+.card{background:white;border-radius:10px;padding:1rem;box-shadow:0 2px 6px rgba(0,0,0,0.1);display:flex;flex-direction:column;height:360px;overflow:hidden;}
+.card img{width:100%;border-radius:5px;margin-bottom:0.5rem;object-fit:cover;height:120px;}
+.card .title{font-weight:bold;margin-bottom:0.5rem;cursor:pointer;color:#2c3e50;text-decoration:underline;}
+.card .source{font-size:0.8rem;color:#7f8c8d;margin-bottom:0.5rem;}
+.card .date{font-size:0.8rem;color:#999;margin-bottom:0.5rem;}
+.card .summary{margin-bottom:0.5rem;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;}
+.card .actions{display:flex;justify-content:space-between;align-items:center;margin-top:auto;}
+.card .actions a{color:#e67e22;text-decoration:none;}
+#backToTop{position:fixed;bottom:20px;right:20px;background:#e67e22;color:white;border:none;border-radius:50%;width:50px;height:50px;font-size:1.5rem;cursor:pointer;display:none;}
+#loadingSpinner{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:1.5rem;color:#e67e22;display:none;}
+@media(max-width:768px){
+  header{background:linear-gradient(90deg,#f5f5f5,#e0e0e0);box-shadow:0 2px 6px rgba(0,0,0,0.15);}
+  header img.header-logo{filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3));}
+  .tab-bar{overflow-x:auto;justify-content:flex-start;scrollbar-width:none;}
+  .tab-bar::-webkit-scrollbar{display:none;}
+  .card img{height:100px;}
+}
+</style>
+</head>
+<body>
+<header>
+  <img src="logo.png" alt="Global Lens Logo" class="header-logo"> Global Lens
+</header>
+
+<div class="tab-bar" id="categoryTabs"></div>
+<div id="loadingSpinner">Loading news...</div>
+<div id="content"></div>
+<button id="backToTop">↑</button>
+
+<script>
+// === CONFIG ===
+const RSS2JSON_API = 'mfvxyevwnjlcnuwmiyprrivbbpyylyhwwzuezdaq';
+const PLACEHOLDER_LOGO = 'logo.png';
+
+// Only reliable feeds that work with rss2json
+const categories = {
+  "Sports": [
+    "https://www.cbc.ca/cmlink/rss-sports",
+    "https://www.sportsnet.ca/feed/"
+  ],
+  "Business": [
+    "https://www.cbc.ca/cmlink/rss-business",
+    "https://www.reuters.com/business/feed/",
+    "https://globalnews.ca/money/feed/"
+  ],
+  "Canadian News": [
+    "https://www.cbc.ca/cmlink/rss-topstories",
+    "https://globalnews.ca/feed/"
+  ],
+  "Entertainment": [
+    "https://globalnews.ca/entertainment/feed/",
+    "https://www.ctvnews.ca/entertainment/rss/ctvnews-ca-entertainment-public-rss-1.822289"
+  ]
+};
+
+// === APP STATE ===
+let activeCategory = "Sports";
+const allArticles = {};
+const categoryTabs = document.getElementById('categoryTabs');
+const loadingSpinner = document.getElementById('loadingSpinner');
+
+// Build category buttons
+Object.keys(categories).forEach(cat => {
+  const btn = document.createElement('button');
+  btn.textContent = cat;
+  btn.onclick = () => { activeCategory = cat; render(); };
+  if (cat === activeCategory) btn.classList.add('active');
+  categoryTabs.appendChild(btn);
+});
+
+const backToTop = document.getElementById('backToTop');
+backToTop.onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+window.onscroll = () => { backToTop.style.display = window.scrollY > 300 ? 'block' : 'none'; };
+
+function toEasternTime(dateStr){
+  const date = new Date(dateStr);
+  return new Date(date.getTime() - 4*60*60*1000);
+}
+
+function getArticleImage(item){
+  if(item.enclosure && item.enclosure.link) return item.enclosure.link;
+  if(item.thumbnail) return item.thumbnail;
+  if(item.description){
+    const tmp = document.createElement('div');
+    tmp.innerHTML = item.description;
+    const imgTag = tmp.querySelector('img');
+    if(imgTag && imgTag.src) return imgTag.src;
+  }
+  return PLACEHOLDER_LOGO;
+}
+
+// Fetch RSS with per-feed error handling
+async function fetchRSS(url){
+  const api = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=${RSS2JSON_API}&count=20`;
+  try {
+    const res = await fetch(api);
+    const data = await res.json();
+    if(data.status !== "ok"){
+      console.warn(`Feed failed: ${url}`, data.message);
+      return [];
+    }
+    return data.items.map(i => ({...i, source: data.feed.title}));
+  } catch (e) {
+    console.error('RSS fetch error:', url, e);
+    return [];
+  }
+}
+
+async function loadAll(){
+  loadingSpinner.style.display = 'block';
+  for(const cat in categories){
+    allArticles[cat] = [];
+    for(const feed of categories[cat]){
+      try{
+        const items = await fetchRSS(feed);
+        allArticles[cat] = allArticles[cat].concat(items);
+      } catch(e){
+        console.error(`Error loading feed ${feed}`, e);
+      }
+    }
+    const seen = new Set();
+    allArticles[cat] = allArticles[cat].filter(a => {
+      if (seen.has(a.link)) return false;
+      seen.add(a.link);
+      return true;
+    });
+  }
+  loadingSpinner.style.display = 'none';
+}
+
+function render(){
+  Array.from(categoryTabs.children).forEach(btn =>
+    btn.classList.toggle('active', btn.textContent === activeCategory)
+  );
+
+  const container = document.getElementById('content');
+  container.innerHTML = '';
+
+  const articles = (allArticles[activeCategory] || [])
+    .sort((a,b)=>toEasternTime(b.pubDate)-toEasternTime(a.pubDate));
+
+  articles.forEach(a => {
+    const imgUrl = getArticleImage(a);
+
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const img = document.createElement('img');
+    img.src = imgUrl || PLACEHOLDER_LOGO;
+    img.onerror = () => { img.src = PLACEHOLDER_LOGO; };
+    card.appendChild(img);
+
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = a.title;
+    title.onclick = () => window.open(a.link, '_blank');
+    card.appendChild(title);
+
+    const srcDiv = document.createElement('div');
+    srcDiv.className = 'source';
+    srcDiv.textContent = a.source;
+    card.appendChild(srcDiv);
+
+    const dateDiv = document.createElement('div');
+    dateDiv.className = 'date';
+    dateDiv.textContent = toEasternTime(a.pubDate).toLocaleString();
+    card.appendChild(dateDiv);
+
+    const summary = document.createElement('div');
+    summary.className = 'summary';
+    summary.innerHTML = (a.description || '').replace(/<img[^>]*>/gi,'');
+    card.appendChild(summary);
+
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const link = document.createElement('a');
+    link.href = a.link;
+    link.target = '_blank';
+    link.textContent = 'Read full article';
+    actions.appendChild(link);
+    card.appendChild(actions);
+
+    container.appendChild(card);
+  });
+}
+
+// === INIT ===
+(async () => {
+  await loadAll();
+  render();
+})();
+</script>
+</body>
+</html>
