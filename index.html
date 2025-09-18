@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Global Lens</title>
+<style>
+  body { font-family: Arial,sans-serif; margin:0; background:#f5f5f5; }
+  header { background:#222; color:#fff; padding:10px; text-align:center; font-size:1.4em; }
+  #categoryTabs { display:flex; overflow-x:auto; background:#333; }
+  #categoryTabs button {
+    flex:1; padding:10px; border:none; background:#333; color:#fff; font-size:1em;
+    cursor:pointer; white-space:nowrap; outline:none;
+  }
+  #categoryTabs button.active { background:#555; }
+  #content { padding:10px; max-width:900px; margin:auto; }
+  .card {
+    display:flex; background:#fff; margin-bottom:10px;
+    border-radius:6px; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,.1);
+  }
+  .card img {
+    width:100px; height:100px; object-fit:cover; flex-shrink:0;
+  }
+  .info { padding:10px; flex:1; display:flex; flex-direction:column; }
+  .title {
+    font-weight:bold; margin-bottom:5px; cursor:pointer;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .summary {
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+    margin-bottom:5px; font-size:0.9em; color:#333;
+  }
+  .source { color:#666; font-size:0.85em; }
+  .date { color:#999; font-size:0.8em; margin-bottom:6px; }
+  #loadingSpinner { text-align:center; padding:15px; display:none; color:#555; }
+  .end-message { 
+    text-align:center; padding:20px; color:#666; font-style:italic; display:none;
+  }
+  #backToTop {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    z-index: 999;
+    display: none;
+    background: #333;
+    color: #fff;
+    border: none;
+    padding: 13px;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(50,50,50,0.15);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  #backToTop.show {
+    display: block;
+    opacity: 1;
+  }
+  #backToTop:hover {
+    background: #555;
+  }
+</style>
+</head>
+<body>
+<header>Global Lens</header>
+
+<div id="categoryTabs"></div>
+<div id="content"></div>
+<div id="loadingSpinner">Loading…</div>
+<div class="end-message" id="endMessage">No more articles to load</div>
+<button id="backToTop" title="Back to top">↑</button>
+
+<script>
+const API_KEY = "mfvxyevwnjlcnuwmiyprrivbbpyylyhwwzuezdaq";
+const BATCH_SIZE = 8;
+const PLACEHOLDER = "logo.png";
+
+const categories = {
+  Sports:[
+    "https://www.sportsnet.ca/feed/",
+    "http://feeds.bbci.co.uk/sport/rss.xml",
+    "https://www.espn.com/espn/rss/news"
+  ],
+  Business:[
+    "https://www.reuters.com/business/rss",
+    "https://www.marketwatch.com/rss/topstories",
+    "https://www.investing.com/rss/news.rss"
+  ],
+  News:[
+    "https://www.cbc.ca/cmlink/rss-topstories",
+    "https://globalnews.ca/feed/",
+    "https://www.ctvnews.ca/rss/ctvnews-ca-top-stories-public-rss-1.822009"
+  ],
+  Entertainment:[
+    "https://globalnews.ca/entertainment/feed/",
+    "https://www.ctvnews.ca/entertainment/rss/ctvnews-ca-entertainment-public-rss-1.822289",
+    "https://www.tmz.com/rss.xml",
+    "https://www.usmagazine.com/feed/",
+    "https://www.justjared.com/feed/"
+  ]
+};
+
+let activeCategory = "Sports";
+const allArticles = {}; 
+const categoryTabs = document.getElementById("categoryTabs");
+const contentDiv   = document.getElementById("content");
+const spinner      = document.getElementById("loadingSpinner");
+const backToTopBtn = document.getElementById("backToTop");
+const endMessage   = document.getElementById("endMessage");
+
+// Create category buttons
+Object.keys(categories).forEach(cat => {
+  const btn = document.createElement("button");
+  btn.textContent = cat;
+  btn.onclick = () => { setActiveCategory(cat); };
+  if (cat === activeCategory) btn.classList.add("active");
+  categoryTabs.appendChild(btn);
+});
+
+// Back-to-top button logic
+backToTopBtn.onclick = () => window.scrollTo({ top: 0, behavior: "smooth" });
+
+// Debounce scroll for infinite scroll and back-to-top button visibility
+let scrollTimeout = null;
+window.addEventListener("scroll", () => {
+  if (window.scrollY > 120) backToTopBtn.classList.add("show");
+  else backToTopBtn.classList.remove("show");
+
+  if (scrollTimeout) clearTimeout(scrollTimeout);
+  scrollTimeout = setTimeout(checkInfiniteScroll, 100);
+});
+
+// Helpers
+function toET(dateStr) {
+  const d = new Date(dateStr);
+  return new Date(d.getTime() - 4*60*60*1000);
+}
+
+function extractImage(item) {
+  if(item.enclosure && item.enclosure.link) return item.enclosure.link;
+  if(item.thumbnail) return item.thumbnail;
+  if(item.content && /<img/i.test(item.content)){
+    const tmp = document.createElement("div");
+    tmp.innerHTML = item.content;
+    const img = tmp.querySelector("img");
+    if(img && img.src) return img.src;
+  }
+  if(item.description && /<img/i.test(item.description)){
+    const tmp = document.createElement("div");
+    tmp.innerHTML = item.description;
+    const img = tmp.querySelector("img");
+    if(img && img.src) return img.src;
+  }
+  return null;
+}
+
+async function fetchFeed(url) {
+  const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=${API_KEY}&count=50`;
+  try {
+    const res = await fetch(apiUrl);
+    const data = await res.json();
+    console.log(`Feed: ${url}`, data);
+    if(data.status !== "ok") {
+      console.warn(`Failed to fetch ${url}:`, data.message || data.status);
+      return [];
+    }
+    return data.items.map(i => ({...i, source: data.feed.title}));
+  } catch(e) {
+    console.error("Fetch error", url, e);
+    return [];
+  }
+}
+
+// Initialize category state
+function initCategoryState(cat) {
+  allArticles[cat] = { 
+    feeds: [], 
+    merged: [], 
+    shown: 0, 
+    fetching: false,
+    allFeedsLoaded: false,
+    hasMoreContent: true
+  };
+  categories[cat].forEach(url => {
+    allArticles[cat].feeds.push({ url, items: [], loaded: false });
+  });
+}
+
+// Load Category: prepares feeds, starts fetch chain
+async function loadCategory(cat) {
+  spinner.style.display = "block";
+  endMessage.style.display = "none";
+  
+  initCategoryState(cat);
+  
+  // Load first batch of feeds
+  await fetchNextBatch(cat);
+  
+  spinner.style.display = "none";
+  await renderBatch(cat);
+  updateEndMessage(cat);
+}
+
+// Fetch next batch of feeds (load multiple feeds at once for better performance)
+async function fetchNextBatch(cat) {
+  const catState = allArticles[cat];
+  const unloadedFeeds = catState.feeds.filter(f => !f.loaded);
+  
+  if (unloadedFeeds.length === 0) {
+    catState.allFeedsLoaded = true;
+    return;
+  }
+  
+  // Load up to 2 feeds at once for better performance
+  const feedsToLoad = unloadedFeeds.slice(0, 2);
+  const promises = feedsToLoad.map(async feed => {
+    const items = await fetchFeed(feed.url);
+    
+    // More lenient image filtering - accept articles without images too
+    feed.items = items.map(a => {
+      const img = extractImage(a);
+      a.imgUrl = img || PLACEHOLDER;
+      return a;
+    });
+    
+    console.log(`Loaded ${feed.items.length} items from ${feed.url}`);
+    feed.loaded = true;
+  });
+  
+  await Promise.all(promises);
+  mergeCategory(cat);
+  
+  console.log(`Category ${cat}: Total merged articles: ${allArticles[cat].merged.length}`);
+}
+
+// Merge feeds, remove duplicates, and sort
+function mergeCategory(cat) {
+  const catState = allArticles[cat];
+  let combined = [];
+  catState.feeds.forEach(f => combined = combined.concat(f.items));
+  const seen = new Set();
+  catState.merged = combined.filter(a => {
+    if(seen.has(a.link)) return false;
+    seen.add(a.link);
+    return true;
+  }).sort((a,b) => new Date(b.pubDate) - new Date(a.pubDate));
+}
+
+// Render next batch of cards for category
+async function renderBatch(cat) {
+  const state = allArticles[cat];
+  if (!state || state.fetching) return;
+
+  // Check if we need to load more feeds
+  if (state.shown >= state.merged.length && !state.allFeedsLoaded) {
+    state.fetching = true;
+    spinner.style.display = "block";
+    await fetchNextBatch(cat);
+    spinner.style.display = "none";
+    state.fetching = false;
+  }
+
+  // Determine if we have more content to show
+  const hasMoreToShow = state.shown < state.merged.length;
+  const hasUnloadedFeeds = !state.allFeedsLoaded;
+  state.hasMoreContent = hasMoreToShow || hasUnloadedFeeds;
+
+  if (!hasMoreToShow) {
+    updateEndMessage(cat);
+    return;
+  }
+
+  const nextBatch = state.merged.slice(state.shown, state.shown + BATCH_SIZE);
+  nextBatch.forEach(a => {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const img = document.createElement("img");
+    img.src = a.imgUrl || PLACEHOLDER;
+    img.onerror = () => { img.src = PLACEHOLDER; };
+
+    const info = document.createElement("div");
+    info.className = "info";
+
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = a.title;
+    title.onclick = () => window.open(a.link, "_blank");
+
+    const summary = document.createElement("div");
+    summary.className = "summary";
+    summary.innerHTML = (a.description || '').replace(/<img[^>]*>/gi,'');
+
+    const src = document.createElement("div");
+    src.className = "source";
+    src.textContent = a.source;
+
+    const date = document.createElement("div");
+    date.className = "date";
+    date.textContent = toET(a.pubDate).toLocaleString();
+
+    info.append(title, summary, src, date);
+    card.append(img, info);
+    contentDiv.appendChild(card);
+  });
+  
+  state.shown += nextBatch.length;
+  updateEndMessage(cat);
+}
+
+// Update end message visibility
+function updateEndMessage(cat) {
+  const state = allArticles[cat];
+  if (!state) return;
+  
+  if (!state.hasMoreContent && state.allFeedsLoaded) {
+    endMessage.style.display = "block";
+  } else {
+    endMessage.style.display = "none";
+  }
+}
+
+// Infinite scroll trigger
+function checkInfiniteScroll() {
+  const state = allArticles[activeCategory];
+  if (!state || state.fetching || !state.hasMoreContent) return;
+  
+  // Trigger when user is near bottom of page
+  if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 300) {
+    renderBatch(activeCategory);
+  }
+}
+
+// Switch active category and render or load as needed
+async function setActiveCategory(cat) {
+  if (activeCategory === cat) return; // Prevent unnecessary reloads
+  
+  activeCategory = cat;
+  contentDiv.innerHTML = "";
+  endMessage.style.display = "none";
+  
+  Array.from(categoryTabs.children).forEach(btn => {
+    btn.classList.toggle("active", btn.textContent === cat);
+  });
+  
+  if (!allArticles[cat]) {
+    await loadCategory(cat);
+  } else {
+    // Reset display for existing category
+    allArticles[cat].shown = 0;
+    await renderBatch(cat);
+    // Continue loading if there's more content
+    if (allArticles[cat].hasMoreContent) {
+      await renderBatch(cat);
+    }
+  }
+}
+
+// Initialization
+(async () => {
+  await loadCategory(activeCategory);
+})();
+</script>
+
+</body>
+</html>
