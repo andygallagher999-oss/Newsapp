@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Lens</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; }
+header { display: flex; justify-content: center; align-items: center; background: #2c3e50; color: #fff; font-size: 1.5rem; padding: 1rem; }
+header img {height:40px;margin-right:0.6rem;}
+.tab-bar { display: flex; flex-wrap: wrap; justify-content: center; background: #34495e; padding: 0.5rem; }
+.tab-bar button { margin: 0.2rem; padding: 0.6rem 1.2rem; border: none; border-radius: 6px; background: #ecf0f1; cursor: pointer; font-size: 1rem; transition: background 0.2s; }
+.tab-bar button.active {background:#e67e22;color:white;}
+.tab-bar button:hover {background:#d0d3d4;}
+#content { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; padding: 1rem; }
+.card { background: white; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); padding: 1rem; display: flex; flex-direction: column; }
+.card img { width: 100%; border-radius: 6px; margin-bottom: 0.5rem; object-fit: cover; height: 160px; }
+.card .title { font-weight: bold; margin-bottom: 0.3rem; cursor: pointer; color: #2c3e50; text-decoration: underline; }
+.card .summary { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; margin-bottom: 0.2rem; }
+.card .source {font-size:0.8rem;color:#7f8c8d;margin-bottom:0.2rem;}
+.card .date {font-size:0.8rem;color:#999;margin-bottom:0.4rem;}
+#backToTop { position: fixed; bottom: 20px; right: 20px; background: #e67e22; color: white; border: none; border-radius: 50%; width: 50px; height: 50px; font-size: 1.5rem; cursor: pointer; display: none; }
+
+/* MOBILE LAYOUT */
+@media (max-width: 700px) {
+  #content { display: block; padding: 0; }
+  .card { flex-direction: row; align-items: flex-start; padding: 0.6rem; margin: 0.5rem; }
+  .card img { width: 120px; height: 120px; object-fit: cover; margin-right: 0.8rem; flex-shrink: 0; border-radius: 6px; }
+  .card .text { flex: 1; display: flex; flex-direction: column; }
+  .card .title { font-size: 1rem; margin-bottom: 0.2rem; }
+  .card .summary { margin-bottom: 0.2rem; }
+  .card .source { font-size:0.85rem; color:#666; margin-bottom:0.1rem; }
+  .card .date { font-size:0.8rem; color:#888; margin-bottom:0.3rem; }
+  .card .actions { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <img src="logo.png" alt="logo">
+  Global Lens
+</header>
+
+<div class="tab-bar" id="categoryTabs"></div>
+<div id="content"></div>
+<button id="backToTop">↑</button>
+
+<script>
+const RSS2JSON_API = 'mfvxyevwnjlcnuwmiyprrivbbpyylyhwwzuezdaq';
+const PLACEHOLDER_LOGO = 'logo.png';
+const PAGE_SIZE = 20;
+
+const categories = {
+  "Sports": [
+    'https://www.sportsnet.ca/feed/',
+    'https://feeds.bbci.co.uk/sport/rss.xml?edition=uk',
+    'https://www.thescore.com/nba_rss.xml'
+  ],
+  "Business": [
+    'https://www.reuters.com/business/rss',
+    'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',
+    'https://www.marketwatch.com/rss/topstories'
+  ],
+  "News": [
+    'https://www.cbc.ca/cmlink/rss-topstories',
+    'https://globalnews.ca/feed/',
+    'https://www.ctvnews.ca/rss/ctvnews-ca-top-stories-public-rss-1.822009'
+  ],
+  "Entertainment": [
+    'https://globalnews.ca/entertainment/feed/',
+    'https://www.ctvnews.ca/entertainment/rss/ctvnews-ca-entertainment-public-rss-1.822289'
+  ]
+};
+
+let activeCategory = "News";
+let allArticles = {};
+let pagesLoaded = {};
+let feedIndex = {};
+let loading = false;
+
+const categoryTabs = document.getElementById('categoryTabs');
+for (const cat in categories) {
+  const btn = document.createElement('button');
+  btn.textContent = cat;
+  btn.onclick = async () => {
+    activeCategory = cat;
+    if(!pagesLoaded[cat]) pagesLoaded[cat]=0;
+    if(!allArticles[cat]) await loadCategory(cat);
+    render(true);
+  };
+  if(cat === activeCategory) btn.classList.add('active');
+  categoryTabs.appendChild(btn);
+}
+
+const backToTop = document.getElementById('backToTop');
+backToTop.onclick = () => window.scrollTo({ top:0, behavior:'smooth' });
+
+function toEasternTime(dateStr){
+  const d = new Date(dateStr);
+  return new Date(d.getTime() - 4*60*60*1000);
+}
+
+function getArticleImage(item){
+  if(item.enclosure && item.enclosure.link) return item.enclosure.link;
+  if(item.thumbnail) return item.thumbnail;
+  if(item.description){
+    const tmp = document.createElement('div');
+    tmp.innerHTML = item.description;
+    const imgTag = tmp.querySelector('img');
+    if(imgTag && imgTag.src) return imgTag.src;
+  }
+  return PLACEHOLDER_LOGO;
+}
+
+async function fetchRSS(url){
+  const api = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=${RSS2JSON_API}&count=50`;
+  try {
+    const res = await fetch(api);
+    const data = await res.json();
+    if(data.status!=="ok") return [];
+    return data.items.map(i=>({...i, source:data.feed.title}));
+  } catch(e) {
+    console.error('RSS error', url, e);
+    return [];
+  }
+}
+
+// Load all feeds for a category
+async function loadCategory(cat){
+  if(!allArticles[cat]) allArticles[cat]=[];
+  if(!feedIndex[cat]) feedIndex[cat] = 0;
+  loading=true;
+  const feeds = categories[cat];
+  for(let i=0; i<feeds.length; i++){
+    const items = await fetchRSS(feeds[i]);
+    allArticles[cat] = allArticles[cat].concat(items);
+  }
+  // Remove duplicates
+  const seen = new Set();
+  allArticles[cat] = allArticles[cat].filter(a=>{
+    if(seen.has(a.link)) return false;
+    seen.add(a.link);
+    return true;
+  });
+  allArticles[cat].sort((a,b)=>toEasternTime(b.pubDate)-toEasternTime(a.pubDate));
+  loading=false;
+}
+
+function render(reset=false){
+  const container = document.getElementById('content');
+  if(reset) container.innerHTML='';
+  Array.from(categoryTabs.children).forEach(btn=>btn.classList.toggle('active', btn.textContent===activeCategory));
+  if(!pagesLoaded[activeCategory]) pagesLoaded[activeCategory]=0;
+  const start = 0;
+  const end = (pagesLoaded[activeCategory]+1)*PAGE_SIZE;
+  const articles = (allArticles[activeCategory]||[]).slice(start,end);
+
+  articles.forEach((a,i)=>{
+    if(container.children[i]) return;
+    const card = document.createElement('div');
+    card.className='card';
+
+    const img = document.createElement('img');
+    img.src=getArticleImage(a);
+    img.onerror=()=>{img.src=PLACEHOLDER_LOGO;};
+
+    const textWrap = document.createElement('div');
+    textWrap.className='text';
+
+    const title = document.createElement('div');
+    title.className='title';
+    title.textContent=a.title;
+    title.onclick=()=>window.open(a.link,'_blank');
+
+    const summary = document.createElement('div');
+    summary.className='summary';
+    summary.innerHTML=(a.description||'').replace(/<img[^>]*>/gi,'');
+
+    const srcDiv = document.createElement('div');
+    srcDiv.className='source';
+    srcDiv.textContent=a.source;
+
+    const dateDiv = document.createElement('div');
+    dateDiv.className='date';
+    dateDiv.textContent=toEasternTime(a.pubDate).toLocaleString();
+
+    textWrap.appendChild(title);
+    textWrap.appendChild(summary);
+    textWrap.appendChild(srcDiv);
+    textWrap.appendChild(dateDiv);
+
+    card.appendChild(img);
+    card.appendChild(textWrap);
+    container.appendChild(card);
+  });
+}
+
+// Infinite scroll
+window.onscroll = async () => {
+  backToTop.style.display = window.scrollY>300?'block':'none';
+  if(window.innerHeight + window.scrollY >= document.body.offsetHeight - 200 && !loading){
+    pagesLoaded[activeCategory]++;
+    // If not enough articles, fetch more
+    if(allArticles[activeCategory].length < pagesLoaded[activeCategory]*PAGE_SIZE){
+      await loadCategory(activeCategory);
+    }
+    render();
+  }
+}
+
+// INIT
+(async()=>{
+  for(const cat in categories){
+    await loadCategory(cat);
+  }
+  render(true);
+})();
+</script>
+</body>
+</html>
