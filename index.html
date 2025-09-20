@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Global Lens</title>
+<style>
+  body { font-family: Arial,sans-serif; margin:0; background:#f5f5f5; }
+  header { background:#222; color:#fff; padding:10px; text-align:center; font-size:1.4em; }
+  #categoryTabs { display:flex; overflow-x:auto; background:#333; }
+  #categoryTabs button {
+    flex:1; padding:10px; border:none; background:#333; color:#fff; font-size:1em;
+    cursor:pointer; white-space:nowrap; outline:none;
+  }
+  #categoryTabs button.active { background:#555; }
+  #content { padding:10px; max-width:900px; margin:auto; }
+  .card {
+    display:flex; background:#fff; margin-bottom:10px;
+    border-radius:6px; overflow:hidden; box-shadow:0 2px 4px rgba(0,0,0,.1);
+  }
+  .card img {
+    width:100px; height:100px; object-fit:cover; flex-shrink:0;
+  }
+  .info { padding:10px; flex:1; display:flex; flex-direction:column; }
+  .title {
+    font-weight:bold; margin-bottom:5px; cursor:pointer;
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .summary {
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+    margin-bottom:5px; font-size:0.9em; color:#333;
+  }
+  .source { color:#666; font-size:0.85em; }
+  .date { color:#999; font-size:0.8em; margin-bottom:6px; }
+  #loadingSpinner { text-align:center; padding:15px; display:none; color:#555; }
+  .end-message {
+    text-align:center; padding:20px; color:#666; font-style:italic; display:none;
+  }
+  #backToTop {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    z-index: 999;
+    display: none;
+    background: #333;
+    color: #fff;
+    border: none;
+    padding: 13px;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(50,50,50,0.15);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  #backToTop.show {
+    display: block;
+    opacity: 1;
+  }
+  #backToTop:hover {
+    background: #555;
+  }
+</style>
+</head>
+<body>
+<header>Global Lens</header>
+
+<div id="categoryTabs"></div>
+<div id="content"></div>
+<div id="loadingSpinner">Hold your horses, I’m loading the articles 🤓</div>
+<div class="end-message" id="endMessage">No more articles to load</div>
+<button id="backToTop" title="Back to top">↑</button>
+
+<script>
+const API_KEY = "mfvxyevwnjlcnuwmiyprrivbbpyylyhwwzuezdaq";
+const BATCH_SIZE = 8;
+const PLACEHOLDER = "logo.png";
+const PER_FEED_BATCH = 10;   // load 10 at a time from each feed
+
+// --- Feeds ---
+const categories = {
+  Sports:[
+    { url:"https://feeds.skysports.com/feeds/rss/football.xml", direct:true },
+    { url:"https://feeds.bbci.co.uk/sport/rss.xml", direct:true },
+    { url:"https://rss.cnn.com/rss/edition_sport.rss", direct:true },
+    { url:"https://www.sportsnet.ca/feed/", direct:false },
+    { url:"https://www.espn.com/espn/rss/news", direct:false },
+    { url:"https://www.thescore.com/rss/news", direct:false },
+    { url:"https://www.cbc.ca/cmlink/rss-sports", direct:true },
+    { url:"https://www.reuters.com/lifestyle/sports/rss", direct:true },
+    { url:"https://www.nbcsports.com/rss", direct:true }
+  ],
+  Business:[
+    { url:"https://feeds.reuters.com/reuters/businessNews", direct:true },
+    { url:"https://feeds.bbci.co.uk/news/business/rss.xml", direct:true },
+    { url:"https://rss.cnn.com/rss/money_latest.rss", direct:true },
+    { url:"https://www.marketwatch.com/rss/topstories", direct:false },
+    { url:"https://www.investing.com/rss/news.rss", direct:false },
+    { url:"https://www.cbc.ca/cmlink/rss-business", direct:true },
+    { url:"https://globalnews.ca/business/feed/", direct:true },
+    { url:"https://www.nasdaq.com/feed/rssoutbound", direct:true },
+    { url:"https://www.finextra.com/rss/news", direct:true }
+  ],
+  News:[
+    { url:"https://feeds.bbci.co.uk/news/rss.xml", direct:true },
+    { url:"https://rss.cnn.com/rss/edition.rss", direct:true },
+    { url:"https://feeds.reuters.com/reuters/topNews", direct:true },
+    { url:"https://feeds.npr.org/1001/rss.xml", direct:true },
+    { url:"https://www.ctvnews.ca/rss/ctvnews-ca-top-stories-public-rss-1.822009", direct:true },
+    { url:"https://globalnews.ca/feed/", direct:true },
+    { url:"https://www.theguardian.com/world/rss", direct:true },
+    { url:"https://www.cbc.ca/cmlink/rss-topstories", direct:true },
+    { url:"https://www.cbc.ca/cmlink/rss-canada", direct:true }
+  ],
+  Entertainment:[
+    { url:"https://feeds.eonline.com/eonline/news", direct:true },
+    { url:"https://feeds.feedburner.com/people/headlines", direct:true },
+    { url:"https://www.tmz.com/rss.xml", direct:false },
+    { url:"https://www.usmagazine.com/feed/", direct:false },
+    { url:"https://www.justjared.com/feed/", direct:false },
+    { url:"https://www.cbc.ca/cmlink/rss-arts-entertainment", direct:true },
+    { url:"https://www.ctv.ca/rss/entertainment", direct:true },
+    { url:"https://globalnews.ca/entertainment/feed/", direct:true },
+    { url:"https://feeds.fanpage.it/fanpage/entertainment", direct:true }
+  ]
+};
+
+let activeCategory = "Sports";
+const allArticles = {};
+const categoryTabs = document.getElementById("categoryTabs");
+const contentDiv   = document.getElementById("content");
+const spinner      = document.getElementById("loadingSpinner");
+const backToTopBtn = document.getElementById("backToTop");
+const endMessage   = document.getElementById("endMessage");
+
+// ----- helpers -----
+function toET(dateStr){
+  const d = new Date(dateStr);
+  return new Date(d.getTime() - 4*60*60*1000);
+}
+function extractImage(item){
+  if(item.enclosure && item.enclosure.link) return item.enclosure.link;
+  if(item.thumbnail) return item.thumbnail;
+  if(item['media:thumbnail'] && item['media:thumbnail'].url) return item['media:thumbnail'].url;
+  const fields = [item.content, item.description, item.summary, item['content:encoded']];
+  for(const f of fields){
+    if(f && /<img/i.test(f)){
+      const tmp = document.createElement("div");
+      tmp.innerHTML = f;
+      const img = tmp.querySelector("img");
+      if(img && img.src && !img.src.includes('data:image')) return img.src;
+    }
+  }
+  return null;
+}
+// add /amp/ for investing.com
+function fixInvestingLink(link){
+  return link.includes("investing.com/news/") && !link.includes("/amp/")
+    ? link.replace("/news/","/news/amp/") : link;
+}
+
+// ----- fetch logic -----
+async function fetchFeed(feedObj){
+  if(feedObj.direct){
+    try{
+      // Use allorigins proxy to avoid CORS issues
+      const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(feedObj.url)}`;
+      const res = await fetch(proxy);
+      const data = await res.json();
+      const xmlDoc = new DOMParser().parseFromString(data.contents,'text/xml');
+      if(xmlDoc.querySelector('parsererror')) return [];
+      return Array.from(xmlDoc.querySelectorAll('item')).map(item=>{
+        const title = item.querySelector('title')?.textContent||'';
+        const link = item.querySelector('link')?.textContent||'';
+        const description = item.querySelector('description')?.textContent||'';
+        const pubDate = item.querySelector('pubDate')?.textContent||'';
+        const content = item.querySelector('content\\:encoded')?.textContent||description;
+        const source = xmlDoc.querySelector('channel > title')?.textContent||'Unknown';
+        return {title, link, description, content, pubDate, source};
+      });
+    }catch(e){ return []; }
+  } else {
+    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedObj.url)}&api_key=${API_KEY}&count=50`;
+    try{
+      const res = await fetch(apiUrl);
+      const data = await res.json();
+      if(data.status !== "ok") return [];
+      return data.items.map(i=>({...i, source: data.feed.title}));
+    }catch(e){ return []; }
+  }
+}
+
+// ----- category state -----
+function initCategoryState(cat){
+  allArticles[cat]={feeds:[], merged:[], shown:0, fetching:false, allFeedsLoaded:false, hasMoreContent:true};
+  categories[cat].forEach(feedObj=>{
+    allArticles[cat].feeds.push({url:feedObj.url,direct:feedObj.direct,items:[],index:0});
+  });
+}
+
+async function loadCategory(cat){
+  spinner.style.display="block";
+  endMessage.style.display="none";
+  initCategoryState(cat);
+  await fetchNextBatch(cat);
+  spinner.style.display="none";
+  await renderBatch(cat);
+  updateEndMessage(cat);
+}
+
+// load next 10 per feed
+async function fetchNextBatch(cat){
+  const state = allArticles[cat];
+  const promises = state.feeds.map(async f=>{
+    const items = await fetchFeed({url:f.url,direct:f.direct});
+    if(items.length){
+      const slice = items.slice(f.index, f.index + PER_FEED_BATCH);
+      f.index += PER_FEED_BATCH;
+      const processed = slice.map(a=>{
+        const img=extractImage(a);
+        if(!img) return null;
+        a.imgUrl=img;
+        return a;
+      }).filter(Boolean);
+      f.items = f.items.concat(processed);
+    }
+  });
+  await Promise.all(promises);
+  mergeCategory(cat);
+}
+
+function mergeCategory(cat){
+  const state = allArticles[cat];
+  let combined = [];
+  state.feeds.forEach(f=> combined = combined.concat(f.items));
+  const seen=new Set();
+  state.merged = combined.filter(a=>{
+    if(seen.has(a.link)) return false;
+    seen.add(a.link);
+    return true;
+  }).sort((a,b)=> new Date(b.pubDate)-new Date(a.pubDate));
+}
+
+async function renderBatch(cat){
+  const state = allArticles[cat];
+  if(!state||state.fetching) return;
+  if(state.shown>=state.merged.length){
+    state.fetching=true;
+    spinner.style.display="block";
+    await fetchNextBatch(cat);
+    spinner.style.display="none";
+    state.fetching=false;
+  }
+  const nextBatch = state.merged.slice(state.shown,state.shown+BATCH_SIZE);
+  nextBatch.forEach(a=>{
+    const card=document.createElement("div"); card.className="card";
+    const img=document.createElement("img"); img.src=a.imgUrl||PLACEHOLDER;
+    img.onerror=()=>{img.src=PLACEHOLDER;};
+    const info=document.createElement("div"); info.className="info";
+    const title=document.createElement("div"); title.className="title"; title.textContent=a.title;
+    title.onclick=()=>window.open(fixInvestingLink(a.link),"_blank");
+    const summary=document.createElement("div"); summary.className="summary";
+    summary.innerHTML=(a.description||'').replace(/<img[^>]*>/gi,'');
+    const src=document.createElement("div"); src.className="source"; src.textContent=a.source;
+    const date=document.createElement("div"); date.className="date"; date.textContent=toET(a.pubDate).toLocaleString();
+    info.append(title,summary,src,date);
+    card.append(img,info);
+    contentDiv.appendChild(card);
+  });
+  state.shown += nextBatch.length;
+  state.hasMoreContent = true; // we keep fetching until empty
+  updateEndMessage(cat);
+}
+
+function updateEndMessage(cat){
+  const state=allArticles[cat];
+  if(!state) return;
+  if(state.merged.length===0) endMessage.style.display="block";
+  else endMessage.style.display="none";
+}
+
+// ---- UI wiring ----
+Object.keys(categories).forEach(cat=>{
+  const btn=document.createElement("button");
+  btn.textContent=cat;
+  btn.onclick=()=>setActiveCategory(cat);
+  if(cat===activeCategory) btn.classList.add("active");
+  categoryTabs.appendChild(btn);
+});
+
+backToTopBtn.onclick = ()=> window.scrollTo({ top:0, behavior:"smooth" });
+
+let scrollTimeout=null;
+window.addEventListener("scroll",()=>{
+  if(window.scrollY>120) backToTopBtn.classList.add("show");
+  else backToTopBtn.classList.remove("show");
+  if(scrollTimeout) clearTimeout(scrollTimeout);
+  scrollTimeout=setTimeout(checkInfiniteScroll,100);
+});
+
+function checkInfiniteScroll(){
+  const state=allArticles[activeCategory];
+  if(!state||state.fetching) return;
+  if(window.innerHeight+window.scrollY>=document.body.offsetHeight-300){
+    renderBatch(activeCategory);
+  }
+}
+
+async function setActiveCategory(cat){
+  if(activeCategory===cat) return;
+  activeCategory=cat;
+  contentDiv.innerHTML=""; endMessage.style.display="none";
+  Array.from(categoryTabs.children).forEach(btn=>btn.classList.toggle("active",btn.textContent===cat));
+  if(!allArticles[cat]) await loadCategory(cat);
+  else { allArticles[cat].shown=0; await renderBatch(cat); }
+}
+
+// ---- start ----
+(async()=>{ await loadCategory(activeCategory); })();
+</script>
+</body>
+</html>
